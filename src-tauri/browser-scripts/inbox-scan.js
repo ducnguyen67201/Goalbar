@@ -35,7 +35,15 @@
           (/^\/messages\/[^/]+/.test(path) && !path.includes("/compose")) || /^\/i\/chat\/[^/]+/.test(path)
         )
       }
-      if (platform === "linkedin") return /^\/messaging\/thread\/[^/]+/.test(path)
+      if (platform === "linkedin") {
+        return (
+          /^\/messaging\/thread\/[^/]+$/.test(path) &&
+          !path
+            .split("/")
+            .filter(Boolean)
+            .some((segment) => segment.toLowerCase() === "undefined")
+        )
+      }
       if (platform === "reddit") {
         return /^\/message\/messages\/[^/]+/.test(path) || /^\/room\/[^/]+/.test(path)
       }
@@ -170,22 +178,25 @@
       ) ||
       selectorPreview ||
       "Open this conversation on the platform."
-    const stableAttribute =
-      row.getAttribute("data-conversation-id") ||
-      row.getAttribute("data-thread-id") ||
-      row.getAttribute("data-item-id") ||
-      row.getAttribute("id") ||
-      row.getAttribute("aria-controls")
-    const remoteId =
-      stableAttribute ||
+    const stableAttribute = [
+      row.getAttribute("data-conversation-id"),
+      row.getAttribute("data-thread-id"),
+      row.getAttribute("data-item-id"),
+      row.getAttribute("aria-controls"),
+      row.getAttribute("id"),
+    ]
+      .map(normalize)
+      .find((value) => value && !/^ember\d+$/i.test(value))
+    const linkedRemoteId =
+      link &&
       (() => {
         try {
           return new URL(remoteUrl).pathname.replace(/^\/+|\/+$/g, "")
         } catch {
           return ""
         }
-      })() ||
-      `fallback:${displayName.toLowerCase()}`
+      })()
+    const remoteId = stableAttribute || linkedRemoteId || `fallback:${platform}:${displayName.toLowerCase()}`
     const marker = attributeSummary(row)
     const unread = /(?:^|\W)(?:unread|new-message|new message)(?:\W|$)/i.test(marker)
     const direction = /^you[:：]/i.test(preview) ? "outbound" : "inbound"
@@ -224,16 +235,19 @@
     scanState = {
       scrollNode,
       startScrollTop: scrollNode?.scrollTop || 0,
+      bottomPasses: 0,
     }
     globalThis[scanKey] = scanState
   }
   const scrollNode = scanState.scrollNode
-  const hasMore = Boolean(
+  const canScroll = Boolean(
     scrollNode &&
     scrollNode.isConnected &&
     scrollNode.scrollTop + scrollNode.clientHeight < scrollNode.scrollHeight - 4,
   )
-  if (hasMore) {
+  scanState.bottomPasses = canScroll ? 0 : scanState.bottomPasses + 1
+  const hasMore = canScroll || Boolean(scrollNode?.isConnected && scanState.bottomPasses < 3)
+  if (canScroll) {
     scrollNode.scrollTop = Math.min(
       scrollNode.scrollTop + Math.max(200, Math.floor(scrollNode.clientHeight * 0.82)),
       scrollNode.scrollHeight,

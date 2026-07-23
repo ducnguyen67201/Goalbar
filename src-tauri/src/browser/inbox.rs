@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::Deserialize;
 use tauri::AppHandle;
@@ -12,8 +12,11 @@ use crate::error::{AppError, AppResult};
 use crate::validation::payload_hash;
 
 const INBOX_SCAN_SCRIPT: &str = include_str!("../../browser-scripts/inbox-scan.js");
-const MAX_SCAN_BATCHES: usize = 5;
-const MAX_ITEMS: usize = 100;
+const MAX_INITIAL_SCAN_BATCHES: usize = 500;
+const MAX_INCREMENTAL_SCAN_BATCHES: usize = 50;
+const MAX_INITIAL_ITEMS: usize = 10_000;
+const MAX_INCREMENTAL_ITEMS: usize = 1_000;
+const MAX_STALLED_BATCHES: usize = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,6 +58,98 @@ pub struct BrowserInboxItem {
 pub struct BrowserInboxPageScan {
     pub state: BrowserInboxPageState,
     pub items: Vec<BrowserInboxItem>,
+    pub mode: BrowserInboxScanMode,
+    pub stop: BrowserInboxScanStop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserInboxScanMode {
+    Initial,
+    Incremental,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserInboxScanStop {
+    Exhausted,
+    KnownConversation,
+    SafetyLimit,
+    Stalled,
+}
+
+impl BrowserInboxScanStop {
+    pub const fn is_partial(self) -> bool {
+        matches!(self, Self::SafetyLimit | Self::Stalled)
+    }
+}
+
+#[derive(Debug)]
+pub struct BrowserInboxScanProgress {
+    mode: BrowserInboxScanMode,
+    known_remote_ids: HashSet<String>,
+    observed_remote_ids: HashSet<String>,
+    batch_count: usize,
+    stalled_batches: usize,
+}
+
+impl BrowserInboxScanProgress {
+    pub fn new(mode: BrowserInboxScanMode, known_remote_ids: HashSet<String>) -> Self {
+        Self {
+            mode,
+            known_remote_ids,
+            observed_remote_ids: HashSet::new(),
+            batch_count: 0,
+            stalled_batches: 0,
+        }
+    }
+
+    pub fn observe<'a>(
+        &mut self,
+        remote_ids: impl IntoIterator<Item = &'a str>,
+        has_more: bool,
+    ) -> Option<BrowserInboxScanStop> {
+        self.batch_count += 1;
+        let mut new_items = 0;
+        let mut reached_known_conversation = false;
+        for remote_id in remote_ids {
+            reached_known_conversation |= self.known_remote_ids.contains(remote_id);
+            new_items += usize::from(self.observed_remote_ids.insert(remote_id.to_owned()));
+        }
+        self.stalled_batches = if new_items == 0 {
+            self.stalled_batches.saturating_add(1)
+        } else {
+            0
+        };
+
+        if !has_more {
+            return Some(BrowserInboxScanStop::Exhausted);
+        }
+        if self.mode == BrowserInboxScanMode::Incremental && reached_known_conversation {
+            return Some(BrowserInboxScanStop::KnownConversation);
+        }
+        if self.batch_count >= self.maximum_batches()
+            || self.observed_remote_ids.len() >= self.maximum_items()
+        {
+            return Some(BrowserInboxScanStop::SafetyLimit);
+        }
+        if self.stalled_batches >= MAX_STALLED_BATCHES {
+            return Some(BrowserInboxScanStop::Stalled);
+        }
+        None
+    }
+
+    const fn maximum_batches(&self) -> usize {
+        match self.mode {
+            BrowserInboxScanMode::Initial => MAX_INITIAL_SCAN_BATCHES,
+            BrowserInboxScanMode::Incremental => MAX_INCREMENTAL_SCAN_BATCHES,
+        }
+    }
+
+    const fn maximum_items(&self) -> usize {
+        match self.mode {
+            BrowserInboxScanMode::Initial => MAX_INITIAL_ITEMS,
+            BrowserInboxScanMode::Incremental => MAX_INCREMENTAL_ITEMS,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,8 +178,10 @@ pub async fn scan(
     manager: &BrowserManager,
     tab_id: Uuid,
     platform: Platform,
+    mode: BrowserInboxScanMode,
+    known_remote_ids: HashSet<String>,
 ) -> AppResult<BrowserInboxPageScan> {
-    let outcome = scan_batches(app, manager, tab_id, platform).await;
+    let outcome = scan_batches(app, manager, tab_id, platform, mode, known_remote_ids).await;
     let _ = evaluate_mode(app, manager, tab_id, platform, "finish").await;
     outcome
 }
@@ -94,32 +191,46 @@ async fn scan_batches(
     manager: &BrowserManager,
     tab_id: Uuid,
     platform: Platform,
+    mode: BrowserInboxScanMode,
+    known_remote_ids: HashSet<String>,
 ) -> AppResult<BrowserInboxPageScan> {
     let mut items = HashMap::new();
     let mut state = BrowserInboxPageState::Ready;
-    for index in 0..MAX_SCAN_BATCHES {
-        let mode = if index == 0 { "start" } else { "next" };
-        let batch = evaluate_mode(app, manager, tab_id, platform, mode).await?;
+    let mut progress = BrowserInboxScanProgress::new(mode, known_remote_ids);
+    let mut stop = BrowserInboxScanStop::Exhausted;
+    for index in 0..MAX_INITIAL_SCAN_BATCHES {
+        let script_mode = if index == 0 { "start" } else { "next" };
+        let batch = evaluate_mode(app, manager, tab_id, platform, script_mode).await?;
         state = batch.state;
         if state != BrowserInboxPageState::Ready {
             break;
         }
-        for raw in batch.items {
-            if let Some(item) = normalize_item(raw, platform) {
-                items.insert(item.remote_id.clone(), item);
-            }
-            if items.len() >= MAX_ITEMS {
-                break;
-            }
+        let normalized = batch
+            .items
+            .into_iter()
+            .filter_map(|raw| normalize_item(raw, platform))
+            .collect::<Vec<_>>();
+        let decision = progress.observe(
+            normalized.iter().map(|item| item.remote_id.as_str()),
+            batch.has_more,
+        );
+        for item in normalized {
+            items.insert(item.remote_id.clone(), item);
         }
-        if items.len() >= MAX_ITEMS || !batch.has_more {
+        if let Some(reason) = decision {
+            stop = reason;
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     let mut items = items.into_values().collect::<Vec<_>>();
     items.sort_by(|left, right| left.remote_id.cmp(&right.remote_id));
-    Ok(BrowserInboxPageScan { state, items })
+    Ok(BrowserInboxPageScan {
+        state,
+        items,
+        mode,
+        stop,
+    })
 }
 
 async fn evaluate_mode(
@@ -273,8 +384,8 @@ mod tests {
                 display_name: "Ross McIntyre".to_owned(),
                 preview: "Status is reachable".to_owned(),
                 unread: false,
-                remote_url:
-                    "https://www.linkedin.com/messaging/thread/2-mailbox/undefined/".to_owned(),
+                remote_url: "https://www.linkedin.com/messaging/thread/2-mailbox/undefined/"
+                    .to_owned(),
                 timestamp: None,
                 direction: BrowserInboxDirection::Inbound,
             },

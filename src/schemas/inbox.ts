@@ -23,6 +23,7 @@ export const browserInboxScanResultSchema = z.object({
   platform: platformSchema,
   status: z.enum([
     "completed",
+    "partial",
     "needs_browser",
     "login_required",
     "verification_required",

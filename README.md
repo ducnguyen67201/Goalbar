@@ -12,14 +12,14 @@ Founder chat sits beside the browser and can request bounded research through an
 
 ## Free local inbox
 
-The Inbox can scan recent conversation rows from signed-in X, Reddit, and LinkedIn tabs in Goalbar's local browser. This path does not require a platform developer application or paid platform API:
+The Inbox can scan conversation rows from signed-in X, Reddit, and LinkedIn tabs in Goalbar's local browser. The first scan walks the available conversation list; later scans stop after reaching locally known rows. This path does not require a platform developer application or paid platform API:
 
 1. Open a platform in Goalbar **Browser** and sign in locally.
 2. In **Inbox**, choose **Scan X**, **Scan Reddit**, or **Scan LinkedIn**.
 3. Filter imported previews locally by **New** or platform.
 4. Open the platform to verify the complete thread, then copy an explicitly approved draft.
 
-Scans are user-triggered and bounded. Goalbar stores normalized conversation-list previews, never cookies or raw HTML, and does not claim complete historical parity. Apple Mail notification import remains available as a secondary macOS signal. Neither local path sends a reply. See [browser inbox scans](docs/browser-inbox-scans.md) and [email notification inbox](docs/email-notification-inbox.md).
+Scans are user-triggered and bounded. Goalbar stores normalized conversation-list previews, never cookies or raw HTML, and reports a partial result if the website stalls before exposing its oldest row. Official account archives remain the completeness path for historical message content. Apple Mail notification import remains available as a secondary macOS signal. Neither local path sends a reply. See [browser inbox scans](docs/browser-inbox-scans.md) and [email notification inbox](docs/email-notification-inbox.md).
 
 ## Controlled growth loop
 

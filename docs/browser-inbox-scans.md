@@ -1,6 +1,6 @@
 # Browser inbox scans
 
-Goalbar can import recent conversation-list previews from X, Reddit, and LinkedIn without platform developer applications or paid API calls.
+Goalbar can import conversation-list previews from X, Reddit, and LinkedIn without platform developer applications or paid API calls.
 
 ## Setup
 
@@ -12,11 +12,16 @@ Goalbar can import recent conversation-list previews from X, Reddit, and LinkedI
 
 ## Scan behavior
 
-- Every scan is explicit, read-only, bounded to five mounted conversation-list batches, and capped at 100 normalized rows.
+- The first successful scan for a platform scrolls through its virtualized conversation list until the oldest row exposed by the website is reached.
+- Later scans are incremental: they collect new and changed rows, then stop after reaching conversations already stored locally.
+- Full scans remain bounded to 500 mounted batches and 10,000 normalized rows; incremental scans are bounded to 50 batches and 1,000 rows. If a website stalls or a safety ceiling is reached, Goalbar reports a partial scan and keeps the rows already collected.
 - Goalbar may navigate an existing local platform tab to its messages page. It never creates a platform account, enters credentials, or bypasses a login or verification challenge.
 - A scan stores the platform, stable row identifier where available, display name, preview, unread marker, timestamp, and same-platform conversation link.
 - Repeated scans update existing rows instead of creating duplicates.
-- Conversation-list HTML is undocumented and can change. A completed scan means Goalbar processed supported rows that were visible to the local webview; it does not guarantee complete historical coverage.
+- Placeholder LinkedIn routes such as links ending in `/undefined/` are rejected. When LinkedIn does not expose a trustworthy per-thread URL, Goalbar opens the signed-in messaging inbox instead of presenting a false deep link.
+- Conversation-list HTML is undocumented and can change. A completed initial scan means Goalbar reached the oldest conversation row that the website exposed to the local webview; it does not guarantee complete server-side history or import every message inside each thread.
+
+For a complete account record, use the platform's official archive import. Browser inbox scanning is the live conversation-index path; official archives remain the completeness path for historical message content.
 
 ## Trust and write boundary
 

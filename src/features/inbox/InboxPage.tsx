@@ -97,7 +97,7 @@ export function InboxPage() {
           )
     },
     onSuccess: async (result) => {
-      if (result.status === "completed") {
+      if (result.status === "completed" || result.status === "partial") {
         await queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
       }
     },
@@ -258,7 +258,7 @@ export function InboxPage() {
         {browserScan.data && (
           <div className="inbox-sync-result" role="status">
             <strong>
-              {browserScan.data.status === "completed"
+              {browserScan.data.status === "completed" || browserScan.data.status === "partial"
                 ? `${browserScan.data.scanned} conversations · ${browserScan.data.imported} new · ${browserScan.data.updated} updated`
                 : `${titleCase(browserScan.data.platform)} needs attention`}
             </strong>

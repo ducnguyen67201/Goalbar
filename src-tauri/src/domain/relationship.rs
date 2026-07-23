@@ -58,6 +58,7 @@ impl ConversationSource {
 #[serde(rename_all = "snake_case")]
 pub enum BrowserInboxScanStatus {
     Completed,
+    Partial,
     NeedsBrowser,
     LoginRequired,
     VerificationRequired,
@@ -68,6 +69,7 @@ impl BrowserInboxScanStatus {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Completed => "completed",
+            Self::Partial => "partial",
             Self::NeedsBrowser => "needs_browser",
             Self::LoginRequired => "login_required",
             Self::VerificationRequired => "verification_required",

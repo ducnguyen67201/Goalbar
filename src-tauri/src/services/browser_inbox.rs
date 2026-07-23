@@ -1,10 +1,14 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Datelike as _, Duration, NaiveDate, Utc};
 use sqlx::{Sqlite, Transaction};
 use tauri::AppHandle;
 use uuid::Uuid;
 
 use crate::browser::BrowserManager;
-use crate::browser::inbox::{self, BrowserInboxItem, BrowserInboxPageScan, BrowserInboxPageState};
+use crate::browser::inbox::{
+    self, BrowserInboxItem, BrowserInboxPageScan, BrowserInboxPageState, BrowserInboxScanMode,
+};
 use crate::browser::policy::{browser_url, page_kind, strip_tracking};
 use crate::domain::Platform;
 use crate::domain::browser::{BrowserLoadState, BrowserPageKind};
@@ -91,13 +95,35 @@ impl BrowserInboxService {
             _ => {}
         }
 
-        let mut page_scan = inbox::scan(app, &self.browser, tab.id, platform).await?;
+        let scan_mode = self.scan_mode(platform).await?;
+        let known_remote_ids = if scan_mode == BrowserInboxScanMode::Incremental {
+            self.known_remote_ids(platform).await?
+        } else {
+            HashSet::new()
+        };
+        let mut page_scan = inbox::scan(
+            app,
+            &self.browser,
+            tab.id,
+            platform,
+            scan_mode,
+            known_remote_ids.clone(),
+        )
+        .await?;
         for _ in 0..2 {
             if page_scan.state != BrowserInboxPageState::Ready || !page_scan.items.is_empty() {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(700)).await;
-            page_scan = inbox::scan(app, &self.browser, tab.id, platform).await?;
+            page_scan = inbox::scan(
+                app,
+                &self.browser,
+                tab.id,
+                platform,
+                scan_mode,
+                known_remote_ids.clone(),
+            )
+            .await?;
         }
         match page_scan.state {
             BrowserInboxPageState::Ready => self.ingest(platform, page_scan).await,
@@ -163,6 +189,29 @@ impl BrowserInboxService {
             })
     }
 
+    async fn scan_mode(&self, platform: Platform) -> AppResult<BrowserInboxScanMode> {
+        let completed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM browser_inbox_scan_state WHERE platform = ? AND status = 'completed')",
+        )
+        .bind(platform.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(if completed {
+            BrowserInboxScanMode::Incremental
+        } else {
+            BrowserInboxScanMode::Initial
+        })
+    }
+
+    async fn known_remote_ids(&self, platform: Platform) -> AppResult<HashSet<String>> {
+        let remote_ids =
+            sqlx::query_scalar("SELECT remote_id FROM browser_inbox_ingestions WHERE platform = ?")
+                .bind(platform.as_str())
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(remote_ids.into_iter().collect())
+    }
+
     async fn ingest(
         &self,
         platform: Platform,
@@ -176,14 +225,8 @@ impl BrowserInboxService {
         let mut transaction = self.pool.begin().await?;
         ensure_local_account(&mut transaction, platform).await?;
         for (index, item) in scan.items.iter().enumerate() {
-            let existing: Option<String> = sqlx::query_scalar(
-                "SELECT conversation_id FROM browser_inbox_ingestions WHERE platform = ? AND remote_id = ?",
-            )
-            .bind(platform.as_str())
-            .bind(&item.remote_id)
-            .fetch_optional(&mut *transaction)
-            .await?;
-            let conversation_id = if let Some(conversation_id) = existing {
+            let existing = find_existing_ingestion(&mut transaction, platform, item).await?;
+            let conversation_id = if let Some((conversation_id, previous_remote_id)) = existing {
                 update_conversation(
                     &mut transaction,
                     platform,
@@ -193,6 +236,16 @@ impl BrowserInboxService {
                     &now_text,
                 )
                 .await?;
+                if previous_remote_id != item.remote_id {
+                    sqlx::query(
+                        "UPDATE browser_inbox_ingestions SET remote_id = ? WHERE platform = ? AND remote_id = ?",
+                    )
+                    .bind(&item.remote_id)
+                    .bind(platform.as_str())
+                    .bind(previous_remote_id)
+                    .execute(&mut *transaction)
+                    .await?;
+                }
                 updated += 1;
                 conversation_id
             } else {
@@ -220,29 +273,37 @@ impl BrowserInboxService {
                 .execute(&mut *transaction)
                 .await?;
         }
-        record_state(
-            &mut transaction,
-            platform,
-            BrowserInboxScanStatus::Completed,
-            scanned,
-            &now_text,
-        )
-        .await?;
+        let status = if scan.stop.is_partial() {
+            BrowserInboxScanStatus::Partial
+        } else {
+            BrowserInboxScanStatus::Completed
+        };
+        record_state(&mut transaction, platform, status, scanned, &now_text).await?;
         transaction.commit().await?;
         let message = if scanned == 0 {
             format!(
                 "No supported {} conversation rows were visible. Confirm the inbox is open and fully loaded.",
                 platform_name(platform)
             )
+        } else if status == BrowserInboxScanStatus::Partial {
+            format!(
+                "{} stopped loading older rows. Scan again to continue.",
+                platform_name(platform)
+            )
+        } else if scan.mode == BrowserInboxScanMode::Initial {
+            format!(
+                "Initial scan reached the oldest available {} conversation.",
+                platform_name(platform)
+            )
         } else {
             format!(
-                "Scanned {scanned} recent {} conversations from the local browser.",
+                "Checked new and changed {} conversations.",
                 platform_name(platform)
             )
         };
         Ok(BrowserInboxScanResult {
             platform,
-            status: BrowserInboxScanStatus::Completed,
+            status,
             scanned,
             imported,
             updated,
@@ -276,6 +337,36 @@ impl BrowserInboxService {
             target_url: target_url(platform).to_owned(),
         })
     }
+}
+
+async fn find_existing_ingestion(
+    transaction: &mut Transaction<'_, Sqlite>,
+    platform: Platform,
+    item: &BrowserInboxItem,
+) -> AppResult<Option<(String, String)>> {
+    let exact: Option<(String, String)> = sqlx::query_as(
+        "SELECT conversation_id, remote_id FROM browser_inbox_ingestions WHERE platform = ? AND remote_id = ?",
+    )
+    .bind(platform.as_str())
+    .bind(&item.remote_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    if exact.is_some() {
+        return Ok(exact);
+    }
+
+    if platform == Platform::Linkedin && item.remote_url == target_url(Platform::Linkedin) {
+        return sqlx::query_as(
+            "SELECT b.conversation_id, b.remote_id FROM browser_inbox_ingestions b JOIN conversations c ON c.id = b.conversation_id WHERE b.platform = ? AND (LOWER(b.remote_url) LIKE '%/undefined%' OR LOWER(b.remote_id) GLOB 'ember[0-9]*') AND LOWER(c.notification_display_name) = LOWER(?) LIMIT 1",
+        )
+        .bind(platform.as_str())
+        .bind(&item.display_name)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(AppError::from);
+    }
+
+    Ok(None)
 }
 
 async fn wait_for_load(manager: &BrowserManager, tab_id: Uuid) -> AppResult<()> {
@@ -343,7 +434,8 @@ async fn update_conversation(
     observed_at: DateTime<Utc>,
     now: &str,
 ) -> AppResult<()> {
-    sqlx::query("UPDATE conversations SET unread_count = ?, reply_capability = 'unsupported', remote_url = ?, updated_at = ?, content_state = 'notification_excerpt', notification_display_name = ? WHERE id = ? AND platform = ?")
+    sqlx::query("UPDATE conversations SET remote_id = ?, unread_count = ?, reply_capability = 'unsupported', remote_url = ?, updated_at = ?, content_state = 'notification_excerpt', notification_display_name = ? WHERE id = ? AND platform = ?")
+        .bind(format!("browser:{}", item.remote_id))
         .bind(i64::from(item.unread))
         .bind(&item.remote_url)
         .bind(observed_at.to_rfc3339())
@@ -462,6 +554,7 @@ mod tests {
     use crate::browser::BrowserManager;
     use crate::browser::inbox::{
         BrowserInboxDirection, BrowserInboxItem, BrowserInboxPageScan, BrowserInboxPageState,
+        BrowserInboxScanMode, BrowserInboxScanStop,
     };
     use crate::db::Database;
     use crate::db::repositories::platform::PlatformRepository;
@@ -479,6 +572,8 @@ mod tests {
         let service = BrowserInboxService::new(BrowserManager::default(), database.pool().clone());
         let scan = BrowserInboxPageScan {
             state: BrowserInboxPageState::Ready,
+            mode: BrowserInboxScanMode::Initial,
+            stop: BrowserInboxScanStop::Exhausted,
             items: vec![
                 BrowserInboxItem {
                     remote_id: "messages/ari".to_owned(),
@@ -539,6 +634,8 @@ mod tests {
                 Platform::Linkedin,
                 BrowserInboxPageScan {
                     state: BrowserInboxPageState::Ready,
+                    mode: BrowserInboxScanMode::Initial,
+                    stop: BrowserInboxScanStop::Exhausted,
                     items: vec![BrowserInboxItem {
                         remote_id: "ember47".to_owned(),
                         display_name: "Ross McIntyre".to_owned(),
@@ -560,6 +657,8 @@ mod tests {
                 Platform::Linkedin,
                 BrowserInboxPageScan {
                     state: BrowserInboxPageState::Ready,
+                    mode: BrowserInboxScanMode::Initial,
+                    stop: BrowserInboxScanStop::Exhausted,
                     items: vec![BrowserInboxItem {
                         remote_id: "fallback:linkedin:ross mcintyre".to_owned(),
                         display_name: "Ross McIntyre".to_owned(),
@@ -608,6 +707,8 @@ mod tests {
                 Platform::Linkedin,
                 BrowserInboxPageScan {
                     state: BrowserInboxPageState::Ready,
+                    mode: BrowserInboxScanMode::Initial,
+                    stop: BrowserInboxScanStop::Exhausted,
                     items: vec![BrowserInboxItem {
                         remote_id: "messaging/thread/mina".to_owned(),
                         display_name: "Mina".to_owned(),
