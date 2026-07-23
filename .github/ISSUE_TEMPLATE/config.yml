@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question or share feedback
+    url: https://github.com/ducnguyen67201/Goalbar/discussions
+    about: Start a GitHub Discussion for questions, early ideas, launch feedback, and community conversation.

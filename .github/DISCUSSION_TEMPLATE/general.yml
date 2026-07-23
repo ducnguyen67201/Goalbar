@@ -1,0 +1,47 @@
+title: "[General] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Welcome to the Goalbar community. Use this space for questions, early ideas, launch feedback, and sharing how you use Goalbar.
+
+        For a reproducible problem, please [open a bug report](https://github.com/ducnguyen67201/Goalbar/issues/new?template=bug_report.yml) instead.
+
+        Do not include access tokens, refresh tokens, authorization codes, client secrets, passwords, private messages, cookies, or other sensitive data.
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Question
+        - Feedback
+        - Early idea
+        - Show and tell
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: discussion
+    attributes:
+      label: What would you like to discuss?
+      description: Share enough context for the community to understand and respond.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add sanitized screenshots, examples, or links if they help.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed secrets, personal data, private content, and other sensitive information.
+          required: true

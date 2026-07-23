@@ -1,0 +1,119 @@
+name: Bug report
+description: Report a reproducible problem with Goalbar.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Goalbar. Before submitting, please search the existing issues for a matching report.
+
+        Goalbar is local-first. Do not include access tokens, refresh tokens, authorization codes, client secrets, passwords, private messages, cookies, or other sensitive data in this report, screenshots, or logs.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of Goalbar has the problem?
+      options:
+        - Desktop app
+        - Local research browser
+        - Inbox
+        - History import
+        - Growth
+        - Landing page
+        - Installation or updates
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Goalbar version
+      description: Enter the release version or commit SHA you are using.
+      placeholder: "Example: v0.1.0 or 4f7c2ab"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Downloaded release
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: What happened?
+      description: Describe the problem and any visible error message.
+      placeholder: Tell us what Goalbar did.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable sequence that triggers the problem.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What did you expect Goalbar to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Paste only sanitized logs or error output. Remove secrets, personal data, private content, and local file paths first.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add sanitized screenshots or other details that may help diagnose the problem.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checklist
+      options:
+        - label: I searched the existing issues and did not find a matching report.
+          required: true
+        - label: I removed secrets, personal data, private content, and other sensitive information.
+          required: true
+        - label: I included the Goalbar version and enough detail to reproduce the problem.
+          required: true

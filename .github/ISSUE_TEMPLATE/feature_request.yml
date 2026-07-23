@@ -1,0 +1,81 @@
+name: Feature request
+description: Propose a focused improvement to Goalbar.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Use [GitHub Discussions](https://github.com/ducnguyen67201/Goalbar/discussions) for open-ended questions, early ideas, and general feedback.
+
+        Do not include access tokens, passwords, private messages, or other sensitive data.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Product area
+      options:
+        - Desktop app
+        - Local research browser
+        - Inbox
+        - History import
+        - Growth
+        - Landing page
+        - Installation or updates
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What user need would this address? Describe the outcome rather than only a UI change.
+      placeholder: I am trying to ... but ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: What would you like Goalbar to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: How do you handle this today, and what other approaches have you considered?
+    validations:
+      required: false
+
+  - type: textarea
+    id: local-first-impact
+    attributes:
+      label: Local-first and privacy considerations
+      description: Note whether this needs network access, platform credentials, external writes, or data to leave the device. "None" is a valid answer.
+      placeholder: None.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add mockups, examples, or links that clarify the request.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checklist
+      options:
+        - label: I searched existing issues and discussions for a similar request.
+          required: true
+        - label: I removed secrets, personal data, private content, and other sensitive information.
+          required: true
