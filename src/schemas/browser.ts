@@ -29,6 +29,14 @@ export const browserPauseReasonSchema = z.enum([
   "policy_restricted",
   "uncertain",
 ])
+export const browserReplyPreparationStatusSchema = z.enum([
+  "prepared",
+  "composer_not_found",
+  "login_required",
+  "verification_required",
+  "unsupported_page",
+])
+export const savedBrowserReplyStatusSchema = z.enum(["prepared", "confirmed_posted"])
 
 export const browserBoundsSchema = z
   .object({
@@ -49,6 +57,27 @@ export const browserTabSchema = z
     platform: platformSchema.nullable().optional(),
     active: z.boolean(),
     createdAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+
+export const savedBrowserReplySchema = z
+  .object({
+    id: z.string().uuid(),
+    platform: platformSchema,
+    targetUrl: z.string().url(),
+    exactReply: z.string().min(1).max(8_000),
+    status: savedBrowserReplyStatusSchema,
+    preparedAt: z.string().datetime({ offset: true }),
+    confirmedPostedAt: z.string().datetime({ offset: true }).nullable().optional(),
+  })
+  .strict()
+
+export const browserReplyPreparationSchema = z
+  .object({
+    status: browserReplyPreparationStatusSchema,
+    platform: platformSchema.nullable().optional(),
+    characterCount: z.number().int().nonnegative(),
+    savedReply: savedBrowserReplySchema.nullable().optional(),
   })
   .strict()
 
@@ -166,6 +195,26 @@ export const browserBoundsInputSchema = z.object({ bounds: browserBoundsSchema }
 export const navigateBrowserInputSchema = z
   .object({ tabId: z.string().uuid(), url: z.string().url() })
   .strict()
+export const prepareBrowserReplyInputSchema = z
+  .object({
+    tabId: z.string().uuid(),
+    url: z.url().refine((value) => {
+      const parsed = new URL(value)
+      const host = parsed.hostname.toLowerCase().replace(/\.$/, "")
+      return (
+        parsed.protocol === "https:" &&
+        ["x.com", "twitter.com", "linkedin.com", "reddit.com"].some(
+          (root) => host === root || host.endsWith(`.${root}`),
+        )
+      )
+    }, "Reply preparation requires HTTPS on X, LinkedIn, or Reddit"),
+    reply: z
+      .string()
+      .min(1)
+      .max(8_000)
+      .refine((value) => value.trim().length > 0, "The exact reply cannot be empty"),
+  })
+  .strict()
 export const browserCaptureInputSchema = z
   .object({
     tabId: z.string().uuid(),
@@ -197,6 +246,8 @@ export const browserPanelWidthInputSchema = z.object({ width: browserPanelWidthS
 
 export type BrowserBounds = z.infer<typeof browserBoundsSchema>
 export type BrowserTab = z.infer<typeof browserTabSchema>
+export type BrowserReplyPreparation = z.infer<typeof browserReplyPreparationSchema>
+export type SavedBrowserReply = z.infer<typeof savedBrowserReplySchema>
 export type BrowserCapturePreview = z.infer<typeof browserCapturePreviewSchema>
 export type BrowserRunProgress = z.infer<typeof browserRunProgressSchema>
 export type BrowserCaptureInput = z.infer<typeof browserCaptureInputSchema>

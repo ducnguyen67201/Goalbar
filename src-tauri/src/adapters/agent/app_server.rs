@@ -68,6 +68,14 @@ Every turn may include trusted Goalbar application context with a browser route:
 - `no_browser`: explain that the user must open X, LinkedIn, or Reddit if browser evidence is needed.
 
 Never answer a routed browser request by reading the workspace, AGENTS.md, or repository.
+
+When you recommend one specific post to engage with, include this exact machine-readable block at
+the end of the reply, with valid JSON and no markdown inside the JSON:
+<goalbar-engagement>
+{"title":"Short post title","url":"https://exact-post-url","reason":"Why this is the best next move","reply":"The exact suggested reply"}
+</goalbar-engagement>
+Only include the block when all four fields are grounded and useful. Goalbar turns it into an
+editable action card. You still cannot like, type, publish, or send on the user's behalf.
 "#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

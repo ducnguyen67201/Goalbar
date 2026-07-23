@@ -59,6 +59,42 @@ pub enum BrowserPauseReason {
     Uncertain,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserReplyPreparationStatus {
+    Prepared,
+    ComposerNotFound,
+    LoginRequired,
+    VerificationRequired,
+    UnsupportedPage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SavedBrowserReplyStatus {
+    Prepared,
+    ConfirmedPosted,
+}
+
+impl SavedBrowserReplyStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Prepared => "prepared",
+            Self::ConfirmedPosted => "confirmed_posted",
+        }
+    }
+
+    pub fn parse(value: &str) -> crate::error::AppResult<Self> {
+        match value {
+            "prepared" => Ok(Self::Prepared),
+            "confirmed_posted" => Ok(Self::ConfirmedPosted),
+            _ => Err(crate::error::AppError::Internal(format!(
+                "unknown saved browser reply status: {value}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
@@ -79,6 +115,27 @@ pub struct BrowserTab {
     pub platform: Option<Platform>,
     pub active: bool,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserReplyPreparation {
+    pub status: BrowserReplyPreparationStatus,
+    pub platform: Option<Platform>,
+    pub character_count: u32,
+    pub saved_reply: Option<SavedBrowserReply>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedBrowserReply {
+    pub id: Uuid,
+    pub platform: Platform,
+    pub target_url: String,
+    pub exact_reply: String,
+    pub status: SavedBrowserReplyStatus,
+    pub prepared_at: String,
+    pub confirmed_posted_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

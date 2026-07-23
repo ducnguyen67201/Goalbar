@@ -1,0 +1,243 @@
+/* global document, getComputedStyle, URL, window */
+/* eslint-disable no-control-regex */
+;(() => {
+  const mode = String(globalThis.__GOALBAR_INBOX_SCAN_MODE__ || "start")
+  const platform = String(globalThis.__GOALBAR_INBOX_SCAN_PLATFORM__ || "")
+  const scanKey = "__GOALBAR_INBOX_SCAN_STATE__"
+  const normalize = (value) =>
+    String(value ?? "")
+      .replace(/[\u0000-\u001f\u007f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  const lines = (node) =>
+    String(node?.innerText ?? node?.textContent ?? "")
+      .split(/\r?\n/)
+      .map(normalize)
+      .filter(Boolean)
+      .filter((value, index, values) => values.indexOf(value) === index)
+  const canonical = (value) => {
+    try {
+      const url = new URL(value, window.location.href)
+      if (url.protocol !== "https:") return null
+      url.search = ""
+      url.hash = ""
+      return url.toString()
+    } catch {
+      return null
+    }
+  }
+  const isConversationUrl = (value) => {
+    try {
+      const url = new URL(value, window.location.href)
+      const path = url.pathname.replace(/\/+$/, "")
+      if (platform === "x") {
+        return (
+          (/^\/messages\/[^/]+/.test(path) && !path.includes("/compose")) || /^\/i\/chat\/[^/]+/.test(path)
+        )
+      }
+      if (platform === "linkedin") return /^\/messaging\/thread\/[^/]+/.test(path)
+      if (platform === "reddit") {
+        return /^\/message\/messages\/[^/]+/.test(path) || /^\/room\/[^/]+/.test(path)
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+  const targetUrl =
+    platform === "x"
+      ? "https://x.com/messages"
+      : platform === "linkedin"
+        ? "https://www.linkedin.com/messaging/"
+        : "https://www.reddit.com/message/inbox"
+  const pageState = () => {
+    const path = window.location.pathname.toLowerCase()
+    if (/login|signin|signup|auth/.test(path)) return "login_required"
+    if (/challenge|checkpoint|verify/.test(path)) return "verification_required"
+    const supported =
+      (platform === "x" && (path.startsWith("/messages") || path.startsWith("/i/chat"))) ||
+      (platform === "linkedin" && path.startsWith("/messaging")) ||
+      (platform === "reddit" &&
+        (path.startsWith("/message") || window.location.hostname.startsWith("chat.reddit.com")))
+    return supported ? "ready" : "unsupported_page"
+  }
+  const state = pageState()
+
+  if (mode === "finish") {
+    const scanState = globalThis[scanKey]
+    if (scanState?.scrollNode?.isConnected) scanState.scrollNode.scrollTop = scanState.startScrollTop
+    delete globalThis[scanKey]
+    return JSON.stringify({ state, items: [], hasMore: false, targetUrl })
+  }
+  if (state !== "ready") {
+    return JSON.stringify({ state, items: [], hasMore: false, targetUrl })
+  }
+
+  const selectors =
+    platform === "x"
+      ? ['[data-testid="conversation"]', 'a[href^="/messages/"]', 'a[href^="/i/chat/"]']
+      : platform === "linkedin"
+        ? [
+            ".msg-conversation-listitem",
+            ".msg-conversations-container__convo-item-link",
+            'a[href*="/messaging/thread/"]',
+          ]
+        : [".Message", '[data-testid*="message"]', 'a[href*="/message/messages/"]', 'a[href*="/room/"]']
+  const closestRow = (node) => {
+    if (platform === "x") {
+      return node.closest?.('[data-testid="conversation"], [role="listitem"], [role="row"], li') || node
+    }
+    if (platform === "linkedin") {
+      return (
+        node.closest?.(
+          ".msg-conversation-listitem, .msg-conversations-container__convo-item, [role='listitem'], li",
+        ) || node
+      )
+    }
+    return node.closest?.(".Message, [data-testid*='message'], [role='listitem'], article, li") || node
+  }
+  const rows = []
+  const seenRows = new Set()
+  for (const selector of selectors) {
+    for (const node of document.querySelectorAll(selector)) {
+      const row = closestRow(node)
+      if (seenRows.has(row)) continue
+      const rect = row.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) continue
+      seenRows.add(row)
+      rows.push(row)
+    }
+  }
+
+  const timePattern =
+    /^(?:now|yesterday|\d+\s*(?:s|m|h|d|w|mo|y)|\d+\s+(?:second|minute|hour|day|week|month|year)s?\s+ago)$/i
+  const nodeText = (node) => normalize(node?.innerText || node?.textContent || "")
+  const namedText = (row) => {
+    const selector =
+      platform === "x"
+        ? '[data-testid="User-Name"], [data-testid="UserName"], strong, [dir="auto"]'
+        : platform === "linkedin"
+          ? ".msg-conversation-listitem__participant-names, h3, strong"
+          : "[data-testid*='author'], .author, h3, strong"
+    return nodeText(row.querySelector(selector))
+  }
+  const previewText = (row) => {
+    const selector =
+      platform === "linkedin"
+        ? ".msg-conversation-card__message-snippet, .msg-conversation-listitem__message-snippet"
+        : platform === "reddit"
+          ? ".md, [data-testid*='subject'], [data-testid*='message'] p"
+          : '[data-testid="conversation"] [dir="auto"]'
+    return nodeText(row.querySelector(selector))
+  }
+  const attributeSummary = (row) =>
+    [row, ...Array.from(row.querySelectorAll("[aria-label], [title], [data-testid], [class]")).slice(0, 80)]
+      .map((node) =>
+        [
+          node.getAttribute?.("aria-label"),
+          node.getAttribute?.("title"),
+          node.getAttribute?.("data-testid"),
+          node.getAttribute?.("class"),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      )
+      .join(" ")
+  const findLink = (row) =>
+    Array.from(row.matches?.("a[href]") ? [row] : row.querySelectorAll("a[href]")).find((anchor) =>
+      isConversationUrl(anchor.href),
+    )
+  const itemFor = (row) => {
+    const rowLines = lines(row)
+    const link = findLink(row)
+    const remoteUrl = canonical(link?.href) || targetUrl
+    const timestampNode = row.querySelector("time")
+    const timestamp =
+      normalize(timestampNode?.getAttribute("datetime")) ||
+      nodeText(timestampNode) ||
+      rowLines.find((value) => timePattern.test(value)) ||
+      null
+    const displayName =
+      namedText(row) || rowLines.find((value) => !timePattern.test(value) && !/^you[:：]/i.test(value)) || ""
+    const selectorPreview = previewText(row)
+    const preview =
+      rowLines.find(
+        (value) =>
+          value !== displayName &&
+          value !== timestamp &&
+          !timePattern.test(value) &&
+          !/^(?:chat|messages?|inbox|all|primary|other)$/i.test(value),
+      ) ||
+      selectorPreview ||
+      "Open this conversation on the platform."
+    const stableAttribute =
+      row.getAttribute("data-conversation-id") ||
+      row.getAttribute("data-thread-id") ||
+      row.getAttribute("data-item-id") ||
+      row.getAttribute("id") ||
+      row.getAttribute("aria-controls")
+    const remoteId =
+      stableAttribute ||
+      (() => {
+        try {
+          return new URL(remoteUrl).pathname.replace(/^\/+|\/+$/g, "")
+        } catch {
+          return ""
+        }
+      })() ||
+      `fallback:${displayName.toLowerCase()}`
+    const marker = attributeSummary(row)
+    const unread = /(?:^|\W)(?:unread|new-message|new message)(?:\W|$)/i.test(marker)
+    const direction = /^you[:：]/i.test(preview) ? "outbound" : "inbound"
+    if (!displayName || !remoteId) return null
+    return {
+      remoteId,
+      displayName,
+      preview,
+      unread,
+      remoteUrl,
+      timestamp,
+      direction,
+    }
+  }
+  const items = rows.map(itemFor).filter(Boolean).slice(0, 100)
+
+  const scrollableAncestor = (row) => {
+    let current = row?.parentElement
+    while (current && current !== document.body) {
+      const style = getComputedStyle(current)
+      if (/(auto|scroll)/.test(style.overflowY) && current.scrollHeight > current.clientHeight + 4) {
+        return current
+      }
+      current = current.parentElement
+    }
+    return null
+  }
+  let scanState = globalThis[scanKey]
+  if (!scanState || mode === "start") {
+    const fallbackScrollNode = Array.from(document.querySelectorAll("main *"))
+      .filter((node) => node.scrollHeight > node.clientHeight + 4)
+      .sort(
+        (left, right) => right.scrollHeight - right.clientHeight - (left.scrollHeight - left.clientHeight),
+      )[0]
+    const scrollNode = scrollableAncestor(rows[0]) || fallbackScrollNode || null
+    scanState = {
+      scrollNode,
+      startScrollTop: scrollNode?.scrollTop || 0,
+    }
+    globalThis[scanKey] = scanState
+  }
+  const scrollNode = scanState.scrollNode
+  const hasMore = Boolean(
+    scrollNode &&
+    scrollNode.isConnected &&
+    scrollNode.scrollTop + scrollNode.clientHeight < scrollNode.scrollHeight - 4,
+  )
+  if (hasMore) {
+    scrollNode.scrollTop = Math.min(
+      scrollNode.scrollTop + Math.max(200, Math.floor(scrollNode.clientHeight * 0.82)),
+      scrollNode.scrollHeight,
+    )
+  }
+  return JSON.stringify({ state, items, hasMore, targetUrl })
+})()

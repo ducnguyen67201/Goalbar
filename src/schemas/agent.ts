@@ -23,6 +23,27 @@ export const founderChatResearchRequestSchema = z
   })
   .strict()
 
+export const engagementSuggestionSchema = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    url: z.url().refine(
+      (value) => {
+        const parsed = new URL(value)
+        const host = parsed.hostname.toLowerCase().replace(/\.$/, "")
+        return (
+          parsed.protocol === "https:" &&
+          ["x.com", "twitter.com", "linkedin.com", "reddit.com"].some(
+            (root) => host === root || host.endsWith(`.${root}`),
+          )
+        )
+      },
+      { message: "Engagement URLs must use HTTPS on X, LinkedIn, or Reddit" },
+    ),
+    reason: z.string().trim().min(1).max(2_000),
+    reply: z.string().trim().min(1).max(8_000),
+  })
+  .strict()
+
 export const founderChatTurnSchema = z
   .object({
     reply: z.string().trim().min(1).max(8_000),
@@ -126,6 +147,7 @@ export const founderChatOutputJsonSchema = {
 
 export type AgentProvider = z.infer<typeof agentProviderSchema>
 export type AgentStatus = z.infer<typeof agentStatusSchema>
+export type EngagementSuggestion = z.infer<typeof engagementSuggestionSchema>
 export type FounderChatResearchRequest = z.infer<typeof founderChatResearchRequestSchema>
 export type FounderChatTurn = z.infer<typeof founderChatTurnSchema>
 export type CodexChatEvent = z.infer<typeof codexChatEventSchema>

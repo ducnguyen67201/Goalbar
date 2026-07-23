@@ -54,7 +54,7 @@ impl PlatformRepository {
     }
 
     pub async fn list(&self) -> AppResult<Vec<ConnectedAccount>> {
-        let rows = sqlx::query("SELECT id, platform, client_id, remote_account_id, display_name, secret_ref, scopes_json, capabilities_json, token_expires_at, status FROM connected_accounts WHERE status != 'revoked' ORDER BY platform")
+        let rows = sqlx::query("SELECT id, platform, client_id, remote_account_id, display_name, secret_ref, scopes_json, capabilities_json, token_expires_at, status FROM connected_accounts WHERE status != 'revoked' AND client_id NOT IN ('goalbar-email-notifications', 'goalbar-browser-inbox') ORDER BY platform")
             .fetch_all(&self.pool)
             .await?;
         rows.iter().map(row_to_account).collect()

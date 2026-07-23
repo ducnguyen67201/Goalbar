@@ -6,8 +6,9 @@ use crate::app_state::AppState;
 use crate::browser::extraction;
 use crate::db::repositories::research::ResearchRepository;
 use crate::domain::browser::{
-    BrowserBounds, BrowserCapturePreview, BrowserObservation, BrowserResearchTrace,
-    BrowserRunLimits, BrowserRunProgress, BrowserTab, ResearchFindingStatus, StoredResearchFinding,
+    BrowserBounds, BrowserCapturePreview, BrowserObservation, BrowserReplyPreparation,
+    BrowserResearchTrace, BrowserRunLimits, BrowserRunProgress, BrowserTab, ResearchFindingStatus,
+    StoredResearchFinding,
 };
 use crate::domain::history::{ActivityOwnership, HistoryImportResult};
 use crate::error::{AppError, CommandError};
@@ -96,6 +97,42 @@ pub async fn navigate_browser_tab(
         .browser
         .navigate(&app, parse_uuid(&input.tab_id)?, &input.url)
         .map_err(CommandError::from)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PrepareBrowserReplyInput {
+    pub tab_id: String,
+    pub url: String,
+    pub reply: String,
+}
+
+#[tauri::command]
+pub async fn prepare_browser_reply(
+    input: PrepareBrowserReplyInput,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<BrowserReplyPreparation, CommandError> {
+    let mut preparation = crate::browser::reply::prepare(
+        &app,
+        &state.browser,
+        parse_uuid(&input.tab_id)?,
+        &input.url,
+        &input.reply,
+    )
+    .await
+    .map_err(CommandError::from)?;
+    if preparation.status == crate::domain::browser::BrowserReplyPreparationStatus::Prepared {
+        preparation.saved_reply = Some(
+            crate::db::repositories::browser_reply::BrowserReplyRepository::new(
+                state.database.pool().clone(),
+            )
+            .save_prepared(&input.url, &input.reply)
+            .await
+            .map_err(CommandError::from)?,
+        );
+    }
+    Ok(preparation)
 }
 
 #[tauri::command]

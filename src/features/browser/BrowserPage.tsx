@@ -27,6 +27,7 @@ export function BrowserPage() {
     closeStartPage,
     activate,
     navigate,
+    prepareReply,
     close,
     back,
     forward,
@@ -97,7 +98,11 @@ export function BrowserPage() {
             <button onClick={() => void openNewWindow()}>Open visibly</button>
           </div>
         )}
-        <FounderChatPanel activeTab={activeTab} />
+        <FounderChatPanel
+          activeTab={activeTab}
+          onNavigate={(url) => void navigate(url)}
+          onPrepareReply={prepareReply}
+        />
       </aside>
       <PaneDivider
         label="Resize browser controls"
@@ -120,7 +125,13 @@ export function BrowserPage() {
             onReload={reload}
           />
           <div className="browser-surface-slot" ref={surfaceRef}>
-            {startPageOpen && <BrowserStartPage onOpen={createTab} />}
+            {startPageOpen && (
+              <BrowserStartPage
+                onOpen={async (url) => {
+                  await createTab(url)
+                }}
+              />
+            )}
             {!startPageOpen && !isNative && (
               <div className="browser-preview-placeholder">
                 <Globe2 size={34} />

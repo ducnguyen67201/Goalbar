@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use sqlx::Row as _;
-use tauri::State;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::adapters::agent::AgentRegistry;
@@ -10,10 +10,15 @@ use crate::conductor::context::ContextAssembler;
 use crate::conductor::prompt::REPLY_PROMPT;
 use crate::conductor::task::structured_task;
 use crate::db::repositories::relationship::RelationshipRepository;
+use crate::domain::Platform;
 use crate::domain::approval::Approval;
-use crate::domain::relationship::{ConversationSummary, ReplyOptions};
+use crate::domain::relationship::{
+    BrowserInboxScanResult, ConversationSummary, EmailNotificationSyncResult, ReplyOptions,
+};
 use crate::error::{AppError, CommandError};
+use crate::services::browser_inbox::BrowserInboxService;
 use crate::services::communication::CommunicationService;
+use crate::services::email_notifications::EmailNotificationService;
 use crate::services::history::HistoryContextService;
 
 #[tauri::command]
@@ -22,6 +27,54 @@ pub async fn list_conversations(
 ) -> Result<Vec<ConversationSummary>, CommandError> {
     RelationshipRepository::new(state.database.pool().clone())
         .conversations()
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn sync_email_notifications(
+    state: State<'_, AppState>,
+) -> Result<EmailNotificationSyncResult, CommandError> {
+    EmailNotificationService::new(state.database.pool().clone())
+        .sync_apple_mail()
+        .await
+        .map_err(CommandError::from)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrowserInboxScanInput {
+    pub platform: String,
+}
+
+#[tauri::command]
+pub async fn scan_browser_inbox(
+    input: BrowserInboxScanInput,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<BrowserInboxScanResult, CommandError> {
+    BrowserInboxService::new(state.browser.clone(), state.database.pool().clone())
+        .scan(
+            &app,
+            Platform::parse(&input.platform).map_err(CommandError::from)?,
+        )
+        .await
+        .map_err(CommandError::from)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConversationInput {
+    pub conversation_id: String,
+}
+
+#[tauri::command]
+pub async fn mark_conversation_read(
+    input: ConversationInput,
+    state: State<'_, AppState>,
+) -> Result<bool, CommandError> {
+    RelationshipRepository::new(state.database.pool().clone())
+        .mark_read(parse_uuid(&input.conversation_id)?)
         .await
         .map_err(CommandError::from)
 }

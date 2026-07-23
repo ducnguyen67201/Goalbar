@@ -623,7 +623,9 @@ mod tests {
             .save(FounderProfileInput {
                 name: "Duc".to_owned(),
                 product_name: "Goalbar".to_owned(),
+                website_url: None,
                 offer: "Controlled founder growth".to_owned(),
+                ideal_customer: "Technical solo founders".to_owned(),
                 expertise: "Local-first products".to_owned(),
                 goals: vec!["Qualified conversations".to_owned()],
                 boundaries: vec!["No spam".to_owned()],

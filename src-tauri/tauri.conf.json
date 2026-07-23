@@ -32,6 +32,10 @@
     "targets": "all",
     "category": "Productivity",
     "shortDescription": "Local growth operating system for solo founders",
-    "longDescription": "Discover your ICP, operate founder channels, and learn from every experiment without giving up control of your data."
+    "longDescription": "Discover your ICP, operate founder channels, and learn from every experiment without giving up control of your data.",
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist"
+    }
   }
 }

@@ -35,13 +35,26 @@ function renderChat() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <FounderChatPanel activeTab={null} />
+      <FounderChatPanel
+        activeTab={null}
+        onNavigate={() => undefined}
+        onPrepareReply={() =>
+          Promise.resolve({
+            status: "prepared",
+            platform: "x",
+            characterCount: 0,
+          })
+        }
+      />
     </QueryClientProvider>,
   )
 }
 
 describe("FounderChatPanel persistence", () => {
   beforeEach(() => {
+    mocks.invokeOutput.mockReset()
+    mocks.invokeValidated.mockReset()
+    mocks.listen.mockReset()
     mocks.listen.mockResolvedValue(() => undefined)
     mocks.invokeOutput.mockImplementation((command: string) => {
       if (command === "get_codex_chat_state") {

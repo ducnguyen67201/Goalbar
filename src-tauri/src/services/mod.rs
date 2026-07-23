@@ -1,8 +1,10 @@
 pub mod bootstrap;
 pub mod browser;
+pub mod browser_inbox;
 pub mod communication;
 pub mod content;
 pub mod data;
+pub mod email_notifications;
 pub mod history;
 pub mod learning;
 pub mod onboarding;

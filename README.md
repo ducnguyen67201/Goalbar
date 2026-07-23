@@ -10,6 +10,17 @@ For the user’s own historical record, import the official X, LinkedIn, or Redd
 
 Founder chat sits beside the browser and can request bounded research through an explicit approval step. Optional interactive shell, Codex, and Claude terminal infrastructure remains available for future developer workflows. See [agent workbench](docs/agent-workbench.md), [local research browser](docs/browser-conductor.md), and [history import](docs/history-import.md).
 
+## Free local inbox
+
+The Inbox can scan recent conversation rows from signed-in X, Reddit, and LinkedIn tabs in Goalbar's local browser. This path does not require a platform developer application or paid platform API:
+
+1. Open a platform in Goalbar **Browser** and sign in locally.
+2. In **Inbox**, choose **Scan X**, **Scan Reddit**, or **Scan LinkedIn**.
+3. Filter imported previews locally by **New** or platform.
+4. Open the platform to verify the complete thread, then copy an explicitly approved draft.
+
+Scans are user-triggered and bounded. Goalbar stores normalized conversation-list previews, never cookies or raw HTML, and does not claim complete historical parity. Apple Mail notification import remains available as a secondary macOS signal. Neither local path sends a reply. See [browser inbox scans](docs/browser-inbox-scans.md) and [email notification inbox](docs/email-notification-inbox.md).
+
 ## Controlled growth loop
 
 The Growth screen keeps a local ledger from ICP hypothesis to learning:
@@ -44,6 +55,8 @@ pnpm tauri dev
 
 No `.env` is required. Optional diagnostics: `RUST_LOG` and `GOALBAR_HOME`. If more than one Codex CLI is installed, `GOALBAR_CODEX_PATH` can pin Goalbar to a specific healthy executable.
 
+The hosted `/landing` marketing page can optionally send anonymous pageviews and conversion events to PostHog. Copy `.env.example` to `.env.local`, set `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` from the PostHog web installation snippet, and add the same variables to the Vercel project. This integration does not initialize inside the Tauri app, record sessions, autocapture page content, persist visitor identifiers, or send download-form email addresses.
+
 ## Validation
 
 ```bash
@@ -67,6 +80,7 @@ Live API tests are opt-in and require approved developer applications and dedica
 ## Current platform boundary
 
 - Browser: local sign-in, navigation, explicit preview/capture, bounded read-only research, and manual copy/paste publishing when the website permits the embedded engine.
+- Inbox: user-triggered browser conversation-list scans plus optional Apple Mail notification import for X, Reddit, and LinkedIn, with local new/platform filters and a signed-in live thread pane beside the inbox.
 - History: versioned, tolerant official-archive import with provenance, idempotency, and bounded downstream context.
 - Official APIs: remain optional for stable posting, sync, replies, and metrics where an app has current approval.
 

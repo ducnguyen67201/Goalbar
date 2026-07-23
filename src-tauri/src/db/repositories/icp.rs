@@ -20,6 +20,7 @@ impl IcpRepository {
         founder_id: Uuid,
         draft: IcpHypothesisDraft,
     ) -> AppResult<Uuid> {
+        let draft = draft.validate()?;
         let id = Uuid::new_v4();
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.pool.begin().await?;
@@ -48,6 +49,59 @@ impl IcpRepository {
             .bind(serde_json::to_string(&draft.objections)?)
             .bind(serde_json::to_string(&draft.language)?)
             .bind(draft.confidence.clamp(0.0, 1.0))
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(id)
+    }
+
+    pub async fn save_revision(
+        &self,
+        founder_id: Uuid,
+        parent_id: Uuid,
+        draft: IcpHypothesisDraft,
+    ) -> AppResult<Uuid> {
+        let draft = draft.validate()?;
+        let id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
+        let mut transaction = self.pool.begin().await?;
+        let parent_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM icp_hypotheses WHERE id = ? AND founder_id = ?)",
+        )
+        .bind(parent_id.to_string())
+        .bind(founder_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await?;
+        if !parent_exists {
+            return Err(AppError::NotFound(format!("ICP hypothesis {parent_id}")));
+        }
+        let version: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM icp_hypotheses WHERE founder_id = ?",
+        )
+        .bind(founder_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await?;
+        sqlx::query("UPDATE icp_hypotheses SET status = 'archived', updated_at = ? WHERE id = ? AND founder_id = ? AND status = 'proposed'")
+            .bind(&now)
+            .bind(parent_id.to_string())
+            .bind(founder_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("INSERT INTO icp_hypotheses (id, founder_id, version, parent_id, role, situation, urgent_problem, current_workaround, desired_outcome, objections_json, language_json, confidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?)")
+            .bind(id.to_string())
+            .bind(founder_id.to_string())
+            .bind(version)
+            .bind(parent_id.to_string())
+            .bind(draft.role)
+            .bind(draft.situation)
+            .bind(draft.urgent_problem)
+            .bind(draft.current_workaround)
+            .bind(draft.desired_outcome)
+            .bind(serde_json::to_string(&draft.objections)?)
+            .bind(serde_json::to_string(&draft.language)?)
+            .bind(draft.confidence)
             .bind(&now)
             .bind(&now)
             .execute(&mut *transaction)
@@ -161,7 +215,9 @@ mod tests {
             .save(FounderProfileInput {
                 name: "Duc".to_owned(),
                 product_name: "Lab".to_owned(),
+                website_url: None,
                 offer: "Sustainable growth".to_owned(),
+                ideal_customer: "Solo SaaS founders".to_owned(),
                 expertise: "Local-first products".to_owned(),
                 goals: vec!["Qualified conversations".to_owned()],
                 boundaries: vec!["No spam".to_owned()],
@@ -219,5 +275,67 @@ mod tests {
         assert_eq!(current[0].id, second_id);
         assert_eq!(current[0].version, 2);
         assert_eq!(current[0].parent_id, Some(id));
+    }
+
+    #[tokio::test]
+    async fn manual_edit_creates_a_proposed_revision_with_history() {
+        let database = Database::in_memory().await.expect("database");
+        let founder = FounderRepository::new(database.pool().clone())
+            .save(FounderProfileInput {
+                name: "Duc".to_owned(),
+                product_name: "Lab".to_owned(),
+                website_url: None,
+                offer: "Sustainable growth".to_owned(),
+                ideal_customer: "Solo SaaS founders".to_owned(),
+                expertise: "Local-first products".to_owned(),
+                goals: vec!["Qualified conversations".to_owned()],
+                boundaries: vec!["No spam".to_owned()],
+            })
+            .await
+            .expect("founder");
+        let repository = IcpRepository::new(database.pool().clone());
+        let original_id = repository
+            .save_hypothesis(
+                founder.id,
+                IcpHypothesisDraft {
+                    role: "Solo SaaS founder".to_owned(),
+                    situation: "Early traction".to_owned(),
+                    urgent_problem: "Inconsistent learning".to_owned(),
+                    current_workaround: "Ad hoc posting".to_owned(),
+                    desired_outcome: "Repeatable conversations".to_owned(),
+                    objections: vec!["More busywork".to_owned()],
+                    language: vec!["learning loop".to_owned()],
+                    confidence: 0.45,
+                },
+            )
+            .await
+            .expect("original");
+        let revision_id = repository
+            .save_revision(
+                founder.id,
+                original_id,
+                IcpHypothesisDraft {
+                    role: "Technical solo SaaS founder".to_owned(),
+                    situation: "Early traction and no growth team".to_owned(),
+                    urgent_problem: "Inconsistent customer learning".to_owned(),
+                    current_workaround: "Ad hoc posting".to_owned(),
+                    desired_outcome: "Repeatable qualified conversations".to_owned(),
+                    objections: vec!["More busywork".to_owned()],
+                    language: vec!["learning loop".to_owned()],
+                    confidence: 0.6,
+                },
+            )
+            .await
+            .expect("revision");
+
+        let hypotheses = repository
+            .list_for_founder(founder.id)
+            .await
+            .expect("hypotheses");
+        assert_eq!(hypotheses.len(), 1);
+        assert_eq!(hypotheses[0].id, revision_id);
+        assert_eq!(hypotheses[0].version, 2);
+        assert_eq!(hypotheses[0].parent_id, Some(original_id));
+        assert_eq!(hypotheses[0].status, IcpStatus::Proposed);
     }
 }

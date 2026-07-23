@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Goalbar reads X, Reddit, and LinkedIn notification emails from Apple Mail when you choose Check Apple Mail, so it can organize new conversations locally.</string>
+</dict>
+</plist>

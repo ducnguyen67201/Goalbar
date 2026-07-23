@@ -56,6 +56,26 @@ const MIGRATIONS: &[EmbeddedMigration] = &[
         name: "controlled_growth_loop",
         sql: include_str!("../../migrations/0009_controlled_growth_loop.sql"),
     },
+    EmbeddedMigration {
+        version: 10,
+        name: "email_notifications",
+        sql: include_str!("../../migrations/0010_email_notifications.sql"),
+    },
+    EmbeddedMigration {
+        version: 11,
+        name: "founder_starting_context",
+        sql: include_str!("../../migrations/0011_founder_starting_context.sql"),
+    },
+    EmbeddedMigration {
+        version: 12,
+        name: "browser_inbox",
+        sql: include_str!("../../migrations/0012_browser_inbox.sql"),
+    },
+    EmbeddedMigration {
+        version: 13,
+        name: "saved_browser_replies",
+        sql: include_str!("../../migrations/0013_saved_browser_replies.sql"),
+    },
 ];
 
 pub async fn run(pool: &SqlitePool) -> AppResult<()> {

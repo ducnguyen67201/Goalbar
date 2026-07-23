@@ -89,3 +89,103 @@ async fn migration_nine_adds_the_controlled_growth_ledger() {
     .expect("versioned ICP columns");
     assert_eq!(icp_columns, 2);
 }
+
+#[tokio::test]
+async fn migration_ten_adds_typed_local_email_notifications() {
+    let database = Database::in_memory().await.expect("database");
+    let notification_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name IN ('source', 'content_state', 'notification_display_name', 'seen_at')",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("conversation notification columns");
+    assert_eq!(notification_columns, 4);
+
+    let notification_table: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'email_notification_ingestions'",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("notification ingestion table");
+    assert_eq!(notification_table, 1);
+
+    sqlx::query("INSERT INTO connected_accounts (id, platform, client_id, remote_account_id, display_name, secret_ref, scopes_json, capabilities_json, status, created_at, updated_at) VALUES ('email-account', 'x', 'local', 'email', 'Email', 'local/email', '[]', '{}', 'connected', 'now', 'now')")
+        .execute(database.pool())
+        .await
+        .expect("seed notification account");
+    let invalid_source = sqlx::query("INSERT INTO conversations (id, account_id, platform, remote_id, kind, unread_count, reply_capability, updated_at, source, content_state) VALUES ('conversation', 'email-account', 'x', 'remote', 'comment_thread', 1, 'unsupported', 'now', 'browser_scrape', 'complete')")
+        .execute(database.pool())
+        .await;
+    assert!(invalid_source.is_err());
+
+    let table_schema: String =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind("conversations")
+            .fetch_one(database.pool())
+            .await
+            .expect("conversation schema");
+    assert!(table_schema.contains("'email_notification'"));
+    assert!(table_schema.contains("'notification_excerpt'"));
+}
+
+#[tokio::test]
+async fn migration_eleven_adds_optional_founder_starting_context() {
+    let database = Database::in_memory().await.expect("database");
+    let founder_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('founder_profiles') WHERE name IN ('website_url', 'ideal_customer')",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("founder context columns");
+    assert_eq!(founder_columns, 2);
+
+    sqlx::query(
+        "INSERT INTO founder_profiles (id, name, product_name, offer, expertise, goals_json, boundaries_json, onboarding_completed, created_at, updated_at) VALUES ('legacy', 'Duc', 'Lab', 'Growth system', 'Product', '[]', '[]', 1, 'now', 'now')",
+    )
+    .execute(database.pool())
+    .await
+    .expect("legacy-shaped founder record");
+    let defaults: (Option<String>, String) = sqlx::query_as(
+        "SELECT website_url, ideal_customer FROM founder_profiles WHERE id = 'legacy'",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("founder context defaults");
+    assert_eq!(defaults, (None, String::new()));
+}
+
+#[tokio::test]
+async fn migration_twelve_adds_browser_inbox_ingestions() {
+    let database = Database::in_memory().await.expect("database");
+    let tables: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('browser_inbox_ingestions', 'browser_inbox_scan_state')",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("browser inbox tables");
+    assert_eq!(tables, 2);
+
+    let ingestion_schema: String =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind("browser_inbox_ingestions")
+            .fetch_one(database.pool())
+            .await
+            .expect("browser inbox ingestion schema");
+    assert!(ingestion_schema.contains("UNIQUE"));
+    assert!(ingestion_schema.contains("'linkedin'"));
+}
+
+#[tokio::test]
+async fn migration_thirteen_adds_a_truthful_saved_reply_ledger() {
+    let database = Database::in_memory().await.expect("database");
+    let schema: String =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind("saved_browser_replies")
+            .fetch_one(database.pool())
+            .await
+            .expect("saved reply schema");
+
+    assert!(schema.contains("'prepared'"));
+    assert!(schema.contains("'confirmed_posted'"));
+    assert!(schema.contains("'reddit'"));
+}

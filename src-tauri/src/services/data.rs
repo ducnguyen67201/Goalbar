@@ -29,7 +29,7 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
     ));
     let founder = json_array(
         state.database.pool(),
-        "SELECT json_group_array(json_object('id', id, 'name', name, 'productName', product_name, 'offer', offer, 'expertise', expertise, 'goals', json(goals_json), 'boundaries', json(boundaries_json), 'createdAt', created_at, 'updatedAt', updated_at)) FROM founder_profiles",
+        "SELECT json_group_array(json_object('id', id, 'name', name, 'productName', product_name, 'websiteUrl', website_url, 'offer', offer, 'idealCustomer', ideal_customer, 'expertise', expertise, 'goals', json(goals_json), 'boundaries', json(boundaries_json), 'createdAt', created_at, 'updatedAt', updated_at)) FROM founder_profiles",
     )
     .await?;
     let icp = json_array(
@@ -82,8 +82,23 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
         "SELECT json_group_array(json_object('id', id, 'actionId', action_id, 'metricName', metric_name, 'value', value, 'availability', availability, 'sourceDefinition', source_definition, 'notes', notes, 'observedAt', observed_at, 'collectedAt', collected_at)) FROM growth_action_metrics",
     )
     .await?;
+    let inbox_notifications = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('sourceMessageId', e.source_message_id, 'platform', e.platform, 'classification', e.classification, 'receivedAt', e.received_at, 'displayName', c.notification_display_name, 'contentState', c.content_state, 'remoteUrl', c.remote_url, 'seenAt', c.seen_at, 'excerpt', COALESCE((SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY sent_at DESC LIMIT 1), ''))) FROM email_notification_ingestions e JOIN conversations c ON c.id = e.conversation_id",
+    )
+    .await?;
+    let browser_inbox = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('platform', b.platform, 'remoteId', b.remote_id, 'remoteUrl', b.remote_url, 'firstSeenAt', b.first_seen_at, 'lastSeenAt', b.last_seen_at, 'lastScannedAt', b.last_scanned_at, 'displayName', c.notification_display_name, 'seenAt', c.seen_at, 'preview', COALESCE((SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY sent_at DESC LIMIT 1), ''))) FROM browser_inbox_ingestions b JOIN conversations c ON c.id = b.conversation_id",
+    )
+    .await?;
+    let saved_browser_replies = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'platform', platform, 'targetUrl', target_url, 'exactReply', exact_reply, 'status', status, 'preparedAt', prepared_at, 'confirmedPostedAt', confirmed_posted_at)) FROM saved_browser_replies",
+    )
+    .await?;
     let manifest = serde_json::json!({
-        "schemaVersion": 3,
+        "schemaVersion": 6,
         "exportedAt": created_at.to_rfc3339(),
         "includesSecrets": false,
         "founderProfiles": founder,
@@ -96,7 +111,10 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
         "activityItems": activity_items,
         "growthActions": growth_actions,
         "growthActionExecutions": growth_action_executions,
-        "growthActionMetrics": growth_action_metrics
+        "growthActionMetrics": growth_action_metrics,
+        "inboxNotifications": inbox_notifications,
+        "browserInbox": browser_inbox,
+        "savedBrowserReplies": saved_browser_replies
     });
     tokio::fs::write(&path, serde_json::to_vec_pretty(&manifest)?).await?;
     Ok(DataArtifact {
@@ -144,6 +162,7 @@ pub async fn factory_reset(state: &AppState, confirmation: &str) -> AppResult<()
             .await?;
     let mut transaction = state.database.pool().begin().await?;
     for table in [
+        "saved_browser_replies",
         "growth_action_metrics",
         "growth_action_executions",
         "growth_actions",
@@ -153,6 +172,9 @@ pub async fn factory_reset(state: &AppState, confirmation: &str) -> AppResult<()
         "ingestion_sources",
         "job_attempts",
         "jobs",
+        "browser_inbox_scan_state",
+        "browser_inbox_ingestions",
+        "email_notification_ingestions",
         "messages",
         "conversations",
         "relationship_identities",
@@ -194,8 +216,9 @@ async fn json_array(pool: &SqlitePool, query: &str) -> AppResult<serde_json::Val
 
 #[cfg(test)]
 mod tests {
-    use super::factory_reset;
+    use super::{export_json, factory_reset};
     use crate::app_state::AppState;
+    use crate::db::repositories::browser_reply::BrowserReplyRepository;
 
     #[tokio::test]
     async fn reset_requires_exact_confirmation() {
@@ -207,6 +230,10 @@ mod tests {
             .execute(state.database.pool())
             .await
             .expect("seed ingestion source");
+        BrowserReplyRepository::new(state.database.pool().clone())
+            .save_prepared("https://x.com/founder/status/123", "A locally saved reply.")
+            .await
+            .expect("seed saved reply");
         factory_reset(&state, "RESET LOCAL LAB")
             .await
             .expect("reset");
@@ -215,5 +242,39 @@ mod tests {
             .await
             .expect("source count");
         assert_eq!(count, 0);
+        let saved_reply_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM saved_browser_replies")
+                .fetch_one(state.database.pool())
+                .await
+                .expect("saved reply count");
+        assert_eq!(saved_reply_count, 0);
+    }
+
+    #[tokio::test]
+    async fn portable_export_includes_exact_saved_browser_replies() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let state = AppState::open(&directory.path().join("goalbar.sqlite"))
+            .await
+            .expect("state");
+        BrowserReplyRepository::new(state.database.pool().clone())
+            .save_prepared(
+                "https://www.reddit.com/r/startups/comments/123/lesson/",
+                "The exact locally saved reply.",
+            )
+            .await
+            .expect("saved reply");
+
+        let artifact = export_json(&state).await.expect("export");
+        let body = tokio::fs::read_to_string(&artifact.path)
+            .await
+            .expect("export body");
+        let export: serde_json::Value = serde_json::from_str(&body).expect("export JSON");
+
+        assert_eq!(export["schemaVersion"], 6);
+        assert_eq!(
+            export["savedBrowserReplies"][0]["exactReply"],
+            "The exact locally saved reply."
+        );
+        assert_eq!(export["savedBrowserReplies"][0]["status"], "prepared");
     }
 }

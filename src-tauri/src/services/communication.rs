@@ -66,12 +66,24 @@ impl CommunicationService {
         recipient_id: Option<String>,
     ) -> AppResult<RemoteMessage> {
         let mut transaction = self.pool.begin().await?;
-        let row = sqlx::query("SELECT c.account_id, c.platform, c.remote_id, c.kind, a.payload_hash, a.idempotency_key, a.consumed_at, a.invalidated_at FROM conversations c JOIN approvals a ON a.subject_id = c.id WHERE c.id = ? AND a.id = ?")
+        let row = sqlx::query("SELECT c.account_id, c.platform, c.remote_id, c.kind, c.source, EXISTS(SELECT 1 FROM browser_inbox_ingestions bi WHERE bi.conversation_id = c.id) AS browser_scan, a.payload_hash, a.idempotency_key, a.consumed_at, a.invalidated_at FROM conversations c JOIN approvals a ON a.subject_id = c.id WHERE c.id = ? AND a.id = ?")
             .bind(conversation_id.to_string())
             .bind(approval_id.to_string())
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or_else(|| AppError::NotFound("conversation approval".to_owned()))?;
+        if row.try_get::<String, _>("source")? == "email_notification" {
+            return Err(AppError::Unsupported(
+                "email notifications are signals only; copy the approved text and send it on the platform"
+                    .to_owned(),
+            ));
+        }
+        if row.try_get::<i64, _>("browser_scan")? != 0 {
+            return Err(AppError::Unsupported(
+                "browser inbox scans are previews only; copy the approved text and send it on the platform"
+                    .to_owned(),
+            ));
+        }
         if row.try_get::<String, _>("payload_hash")? != payload_hash(&body)
             || row.try_get::<Option<String>, _>("consumed_at")?.is_some()
             || row
@@ -142,5 +154,66 @@ impl CommunicationService {
             .execute(&self.pool)
             .await?;
         Ok(sent)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::adapters::email::RawEmailNotification;
+    use crate::app_state::AppState;
+    use crate::db::repositories::relationship::RelationshipRepository;
+    use crate::error::AppError;
+    use crate::services::email_notifications::EmailNotificationService;
+
+    use super::CommunicationService;
+
+    #[tokio::test]
+    async fn email_notification_approvals_cannot_be_sent_through_an_adapter() {
+        let state = AppState::for_tests().await.expect("state");
+        EmailNotificationService::new(state.database.pool().clone())
+            .ingest(
+                "test",
+                vec![RawEmailNotification {
+                    source_message_id: "x-reply-1".to_owned(),
+                    sender: "X <notify@x.com>".to_owned(),
+                    subject: "Ari replied to your post".to_owned(),
+                    received_at: "2026-07-23T18:00:00Z".to_owned(),
+                    content: "A useful reply\nhttps://x.com/ari/status/1".to_owned(),
+                }],
+            )
+            .await
+            .expect("notification ingestion");
+        let conversation = RelationshipRepository::new(state.database.pool().clone())
+            .conversations()
+            .await
+            .expect("conversations")
+            .remove(0);
+        let service =
+            CommunicationService::new(state.database.pool().clone(), state.platforms.clone());
+        let body = "Thanks for the thoughtful reply.";
+        let approval = service
+            .approve(conversation.id, body, "reply")
+            .await
+            .expect("approval");
+
+        let error = service
+            .send(
+                state.secrets.as_ref(),
+                conversation.id,
+                approval.id,
+                body.to_owned(),
+                None,
+            )
+            .await
+            .expect_err("email notification send must be blocked");
+        assert!(matches!(error, AppError::Unsupported(_)));
+
+        let consumed_at: Option<String> =
+            sqlx::query_scalar("SELECT consumed_at FROM approvals WHERE id = ?")
+                .bind(approval.id.to_string())
+                .fetch_one(state.database.pool())
+                .await
+                .expect("approval state");
+        assert!(consumed_at.is_none());
     }
 }

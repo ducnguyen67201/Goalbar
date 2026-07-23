@@ -6,11 +6,14 @@ import { invokeOutput, invokeValidated, isTauriRuntime } from "@/lib/tauri"
 import {
   browserBoundsInputSchema,
   browserNewWindowRequestSchema,
+  browserReplyPreparationSchema,
   browserTabInputSchema,
   browserTabSchema,
   createBrowserTabInputSchema,
   navigateBrowserInputSchema,
+  prepareBrowserReplyInputSchema,
   type BrowserBounds,
+  type BrowserReplyPreparation,
   type BrowserTab,
 } from "@/schemas/browser"
 
@@ -67,22 +70,21 @@ export function useBrowserSurface() {
   }, [])
 
   const createTab = useCallback(
-    async (url: string) => {
+    async (url: string): Promise<BrowserTab | null> => {
       if (!isTauriRuntime()) {
-        setTabs((current) =>
-          upsertBrowserTab(current, {
-            ...previewTab,
-            id: crypto.randomUUID(),
-            currentUrl: url,
-            title: "New tab",
-            active: true,
-          }),
-        )
+        const created = {
+          ...previewTab,
+          id: crypto.randomUUID(),
+          currentUrl: url,
+          title: "New tab",
+          active: true,
+        }
+        setTabs((current) => upsertBrowserTab(current, created))
         setStartPageOpen(false)
-        return
+        return created
       }
       const currentBounds = bounds()
-      if (!currentBounds) return
+      if (!currentBounds) return null
       const input = { url, bounds: currentBounds }
       const created = await invokeValidated(
         "create_browser_tab",
@@ -92,6 +94,7 @@ export function useBrowserSurface() {
       )
       setTabs((current) => upsertBrowserTab(current, created))
       setStartPageOpen(false)
+      return created
     },
     [bounds],
   )
@@ -120,7 +123,7 @@ export function useBrowserSurface() {
     const node = surfaceRef.current
     if (!node || typeof ResizeObserver === "undefined") return
     let frame = 0
-    const observer = new ResizeObserver(() => {
+    const syncBounds = () => {
       if (!isTauriRuntime()) return
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
@@ -131,11 +134,16 @@ export function useBrowserSurface() {
           (reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)),
         )
       })
-    })
+    }
+    const observer = new ResizeObserver(syncBounds)
     observer.observe(node)
+    window.addEventListener("resize", syncBounds)
+    window.addEventListener("scroll", syncBounds, true)
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      window.removeEventListener("resize", syncBounds)
+      window.removeEventListener("scroll", syncBounds, true)
     }
   }, [bounds])
 
@@ -182,6 +190,79 @@ export function useBrowserSurface() {
       browserTabSchema,
     )
     setTabs((current) => current.map((item) => (item.id === tab.id ? tab : item)))
+  }
+
+  const openUrlInPlatform = useCallback(
+    async (url: string, platform: NonNullable<BrowserTab["platform"]>): Promise<BrowserTab | null> => {
+      if (!isTauriRuntime()) {
+        const matchingTab = visibleTabs.find((tab) => tab.platform === platform)
+        if (!matchingTab) return createTab(url)
+        const updated = { ...matchingTab, currentUrl: url, active: true }
+        setTabs((current) => upsertBrowserTab(current, updated))
+        setStartPageOpen(false)
+        return updated
+      }
+
+      const currentBounds = bounds()
+      if (!currentBounds) return null
+      const boundsInput = { bounds: currentBounds }
+      await invokeValidated(
+        "update_browser_bounds",
+        { input: boundsInput },
+        browserBoundsInputSchema,
+        z.boolean(),
+      )
+
+      const currentTabs = await refresh()
+      const matchingTab = currentTabs.find((tab) => tab.platform === platform)
+      if (!matchingTab) return createTab(url)
+
+      const tabInput = { tabId: matchingTab.id }
+      await invokeValidated(
+        "activate_browser_tab",
+        { input: tabInput },
+        browserTabInputSchema,
+        browserTabSchema,
+      )
+      const navigateInput = { tabId: matchingTab.id, url }
+      const navigated = await invokeValidated(
+        "navigate_browser_tab",
+        { input: navigateInput },
+        navigateBrowserInputSchema,
+        browserTabSchema,
+      )
+      setTabs((current) => upsertBrowserTab(current, navigated))
+      setStartPageOpen(false)
+      return navigated
+    },
+    [bounds, createTab, refresh, visibleTabs],
+  )
+
+  const prepareReply = async (url: string, reply: string): Promise<BrowserReplyPreparation> => {
+    if (!isTauriRuntime()) {
+      await navigate(url)
+      return browserReplyPreparationSchema.parse({
+        status: "unsupported_page",
+        platform: activeTab?.platform ?? null,
+        characterCount: 0,
+      })
+    }
+
+    const targetTab = activeTab ?? (await createTab(url))
+    if (!targetTab) {
+      return browserReplyPreparationSchema.parse({
+        status: "composer_not_found",
+        platform: null,
+        characterCount: 0,
+      })
+    }
+    const input = { tabId: targetTab.id, url, reply }
+    return invokeValidated(
+      "prepare_browser_reply",
+      { input },
+      prepareBrowserReplyInputSchema,
+      browserReplyPreparationSchema,
+    )
   }
 
   const simpleAction = async (command: string) => {
@@ -246,6 +327,8 @@ export function useBrowserSurface() {
     closeStartPage,
     activate,
     navigate,
+    openUrlInPlatform,
+    prepareReply,
     close,
     back: () => simpleAction("browser_go_back"),
     forward: () => simpleAction("browser_go_forward"),

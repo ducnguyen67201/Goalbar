@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scan-browser-inbox"
+description = "Enables the scan_browser_inbox command without any pre-configured scope."
+commands.allow = ["scan_browser_inbox"]
+
+[[permission]]
+identifier = "deny-scan-browser-inbox"
+description = "Denies the scan_browser_inbox command without any pre-configured scope."
+commands.deny = ["scan_browser_inbox"]

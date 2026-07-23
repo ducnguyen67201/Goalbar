@@ -1,0 +1,20 @@
+# Desktop-only sources and build outputs are not part of the hosted Vite site.
+src-tauri/
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Development-only material.
+e2e/
+docs/
+.claude/
+.github/
+*.tsbuildinfo
+*.log
+
+# Local configuration and Vercel metadata must never be uploaded.
+.env
+.env.*
+.vercel/

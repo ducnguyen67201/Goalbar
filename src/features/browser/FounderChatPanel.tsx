@@ -5,7 +5,9 @@ import {
   Bot,
   CheckCircle2,
   FlaskConical,
+  ListChecks,
   LoaderCircle,
+  MessageCircle,
   Plus,
   Send,
   Sparkles,
@@ -19,6 +21,8 @@ import { useBootstrap } from "@/app/bootstrap"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { EngagementSuggestionCard } from "@/features/browser/EngagementSuggestionCard"
+import { parseEngagementSuggestion } from "@/features/browser/engagement-suggestion"
 import { HistoryImportPanel } from "@/features/browser/HistoryImportPanel"
 import { invokeOutput, invokeValidated, isTauriRuntime } from "@/lib/tauri"
 import {
@@ -33,6 +37,7 @@ import {
   sendCodexChatInputSchema,
   type AgentProvider,
   type CodexChatEvent,
+  type EngagementSuggestion,
   type FounderChatResearchRequest,
   type FounderChatTurn,
 } from "@/schemas/agent"
@@ -44,6 +49,7 @@ import {
   startBrowserCollectionInputSchema,
   storedResearchFindingSchema,
   type BrowserResearchTrace,
+  type BrowserReplyPreparation,
   type BrowserRunProgress,
   type BrowserTab,
   type StoredResearchFinding,
@@ -51,6 +57,8 @@ import {
 
 type FounderChatPanelProps = {
   activeTab: BrowserTab | null
+  onNavigate: (url: string) => void
+  onPrepareReply: (url: string, reply: string) => Promise<BrowserReplyPreparation>
 }
 
 type ChatMessage = {
@@ -67,12 +75,14 @@ type BrowserTaskInvocation = {
 
 type ChatSubmission = {
   message: string
+  displayMessage?: string
   tab: BrowserTab | null
   provider: AgentProvider
 }
 
 type CodexChatSubmission = {
   message: string
+  displayMessage?: string
   tab: BrowserTab | null
 }
 
@@ -103,6 +113,13 @@ maximumItems. Otherwise default to 12 items. Never request more than 25 items or
 When browser evidence is useful, return a researchRequest with a focused objective, a short reason,
 ownership, and conservative limits. Otherwise researchRequest must be null.
 Never publish, send a DM, or imply an external action occurred.
+When you recommend one specific post to engage with, include this exact machine-readable block at the
+end of the reply, with valid JSON and no markdown inside the JSON:
+<goalbar-engagement>
+{"title":"Short post title","url":"https://exact-post-url","reason":"Why this is the best next move","reply":"The exact suggested reply"}
+</goalbar-engagement>
+Only include the block when all four fields are grounded and useful. The app turns it into an editable
+action card; it still never posts automatically.
 `.trim()
 
 function newMessage(role: ChatMessage["role"], body: string): ChatMessage {
@@ -160,6 +177,35 @@ function previewFounderChatTurn(message: string): FounderChatTurn {
   })
 }
 
+function previewEngagementReply(platform: NonNullable<BrowserTab["platform"]>) {
+  const details = {
+    x: {
+      title: "A founder sharing the messy story behind their product",
+      url: "https://x.com/goalbar/status/1234567890123456789",
+    },
+    linkedin: {
+      title: "A solo founder explaining what finally unlocked early growth",
+      url: "https://www.linkedin.com/posts/goalbar_founder-growth-activity-1234567890123456789",
+    },
+    reddit: {
+      title: "A candid build-in-public lesson from an early-stage founder",
+      url: "https://www.reddit.com/r/startups/comments/goalbar/founder_lesson/",
+    },
+  }[platform]
+  return `
+I found one focused next move.
+<goalbar-engagement>
+${JSON.stringify({
+  ...details,
+  reason:
+    "It directly overlaps with your founder-voice theme and still has room for a specific, thoughtful response.",
+  reply:
+    "The most useful founder stories usually start before the startup—with the frustration or failed attempt that made the problem impossible to ignore. That detail builds more trust than a polished origin story ever could.",
+})}
+</goalbar-engagement>
+  `.trim()
+}
+
 function browserToolLabel(tool: string) {
   switch (tool) {
     case "browser_observe":
@@ -177,7 +223,7 @@ function browserToolLabel(tool: string) {
   }
 }
 
-export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
+export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: FounderChatPanelProps) {
   const bootstrap = useBootstrap()
   const [provider, setProvider] = useState<AgentProvider>("codex")
   const [messages, setMessages] = useState<ChatMessage[]>([initialMessage])
@@ -330,12 +376,18 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
     mutationFn: async ({ message, tab }: CodexChatSubmission) => {
       if (!isTauriRuntime()) {
         const browserRequest = inferBrowserResearchRequest(message)
+        const wantsEngagement =
+          /\b(?:engage|comment|reply)\b[\s\S]{0,80}\b(?:post|thread)\b|\b(?:post|thread)\b[\s\S]{0,80}\b(?:engage|comment|reply)\b/i.test(
+            message,
+          )
         return codexChatTurnResultSchema.parse({
           threadId: crypto.randomUUID(),
           turnId: crypto.randomUUID(),
           reply: browserRequest
             ? tab?.platform
-              ? `I inspected the open ${tab.platform.toUpperCase()} page with Browser Use and prepared a grounded answer.`
+              ? wantsEngagement
+                ? previewEngagementReply(tab.platform)
+                : `I inspected the open ${tab.platform.toUpperCase()} page with Browser Use and prepared a grounded answer.`
               : "Open X, LinkedIn, or Reddit beside this chat so Browser Use has a page to inspect."
             : previewFounderChatTurn(message).reply,
         })
@@ -351,9 +403,9 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
         codexChatTurnResultSchema,
       )
     },
-    onMutate: ({ message, tab }) => {
+    onMutate: ({ message, displayMessage, tab }) => {
       chatInteractionStarted.current = true
-      setMessages((current) => [...current, newMessage("user", message)])
+      setMessages((current) => [...current, newMessage("user", displayMessage ?? message)])
       setComposer("")
       setStreamingReply("")
       setCodexToolActivity(
@@ -420,9 +472,9 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
       )
       return result.output
     },
-    onMutate: ({ message }) => {
+    onMutate: ({ message, displayMessage }) => {
       chatInteractionStarted.current = true
-      setMessages((current) => [...current, newMessage("user", message)])
+      setMessages((current) => [...current, newMessage("user", displayMessage ?? message)])
       setComposer("")
     },
     onSuccess: (turn, submission) => {
@@ -498,8 +550,8 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
       setFindings((current) => current.map((finding) => (finding.id === updated.id ? updated : finding))),
   })
 
-  const submit = () => {
-    const message = composer.trim()
+  const submitMessage = (rawMessage: string) => {
+    const message = rawMessage.trim()
     if (!message || chat.isPending || codexChat.isPending || collect.isPending) return
 
     if (provider === "codex") {
@@ -534,6 +586,39 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
     setFindings([])
     if (activeTab?.platform) collect.mutate({ request, tab: activeTab, provider })
   }
+
+  const submit = () => submitMessage(composer)
+
+  const rewriteEngagement = (suggestion: EngagementSuggestion) => {
+    const message = `
+Rewrite this suggested reply so it sounds natural, specific, and like a thoughtful founder—not a
+generic social media comment. Preserve the recommendation and return the result as a Goalbar
+engagement card.
+
+Post: ${suggestion.title}
+URL: ${suggestion.url}
+Why it fits: ${suggestion.reason}
+Current reply:
+${suggestion.reply}
+    `.trim()
+
+    if (provider === "codex") {
+      codexChat.mutate({
+        message,
+        displayMessage: "Rewrite the suggested reply",
+        tab: activeTab,
+      })
+      return
+    }
+
+    chat.mutate({
+      message,
+      displayMessage: "Rewrite the suggested reply",
+      tab: activeTab,
+      provider,
+    })
+  }
+
   const error =
     codexChat.error ??
     chat.error ??
@@ -543,6 +628,7 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
     review.error ??
     chatStateError
   const chatPending = codexChat.isPending || chat.isPending
+  const conversationStarted = messages.some((message) => message.role === "user")
 
   return (
     <section className="founder-chat" aria-label="Founder chat">
@@ -586,12 +672,64 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
       </header>
 
       <div className="founder-chat-messages" aria-live="polite">
-        {messages.map((message) => (
-          <article className={`chat-message ${message.role}`} key={message.id}>
-            <span>{message.role === "user" ? "You" : message.role === "tool" ? "Browser" : "Goalbar"}</span>
-            <p>{message.body}</p>
-          </article>
-        ))}
+        {messages.map((message) => {
+          const engagement = message.role === "assistant" ? parseEngagementSuggestion(message.body) : null
+          return (
+            <article className={`chat-message ${message.role}`} key={message.id}>
+              <span>{message.role === "user" ? "You" : message.role === "tool" ? "Browser" : "Goalbar"}</span>
+              {engagement ? (
+                <EngagementSuggestionCard
+                  suggestion={engagement}
+                  rewritePending={chatPending}
+                  onOpen={onNavigate}
+                  onPrepare={onPrepareReply}
+                  onRewrite={rewriteEngagement}
+                />
+              ) : (
+                <p>{message.body}</p>
+              )}
+            </article>
+          )
+        })}
+        {!conversationStarted && !chatPending && (
+          <section className="chat-quick-actions" aria-label="Suggested actions">
+            <div>
+              <Sparkles size={13} />
+              <span>
+                <strong>Start with one click</strong>
+                <small>Goalbar will use the open page when it needs evidence.</small>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                submitMessage(
+                  "Find one high-fit post I can thoughtfully engage with. Recommend the best one and draft a reply in my voice.",
+                )
+              }
+            >
+              <MessageCircle size={13} />
+              <span>
+                <strong>Find a post to engage</strong>
+                <small>Choose one and draft my reply</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                submitMessage(
+                  "Give me the single best growth action for today using what you know about my ICP and founder voice.",
+                )
+              }
+            >
+              <ListChecks size={13} />
+              <span>
+                <strong>Recommend today’s action</strong>
+                <small>Keep it focused and realistic</small>
+              </span>
+            </button>
+          </section>
+        )}
         {streamingReply && (
           <article className="chat-message assistant streaming">
             <span>Goalbar</span>

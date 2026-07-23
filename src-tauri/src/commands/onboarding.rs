@@ -28,6 +28,40 @@ pub async fn save_founder_profile(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateFounderInput {
+    pub founder_id: String,
+    pub profile: FounderProfileInput,
+}
+
+#[tauri::command]
+pub async fn update_founder_profile(
+    input: UpdateFounderInput,
+    state: State<'_, AppState>,
+) -> Result<FounderProfile, CommandError> {
+    let founder_id = parse_uuid(&input.founder_id)?;
+    let current = FounderRepository::new(state.database.pool().clone())
+        .latest()
+        .await
+        .map_err(CommandError::from)?
+        .ok_or_else(|| {
+            CommandError::from(AppError::Validation(
+                "complete founder onboarding first".to_owned(),
+            ))
+        })?;
+    if current.id != founder_id {
+        return Err(CommandError::from(AppError::Validation(
+            "the founder baseline changed; reload before editing".to_owned(),
+        )));
+    }
+    let updated = FounderRepository::new(state.database.pool().clone())
+        .update(founder_id, input.profile)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(updated)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveVoiceInput {
     pub founder_id: String,
     pub voice: VoiceProfileInput,
@@ -57,6 +91,11 @@ pub async fn generate_icp_hypotheses(
     input: GenerateIcpInput,
     state: State<'_, AppState>,
 ) -> Result<IcpHypotheses, CommandError> {
+    if input.provider != "codex" {
+        return Err(CommandError::from(AppError::Validation(
+            "ICP learning runs through the local Codex CLI".to_owned(),
+        )));
+    }
     let founder = FounderRepository::new(state.database.pool().clone())
         .latest()
         .await
@@ -67,6 +106,11 @@ pub async fn generate_icp_hypotheses(
             ))
         })?;
     let provider = AgentRegistry::parse_provider(&input.provider).map_err(CommandError::from)?;
+    let repository = IcpRepository::new(state.database.pool().clone());
+    let current_icp = repository
+        .list_for_founder(founder.id)
+        .await
+        .map_err(CommandError::from)?;
     let history = HistoryContextService::new(state.database.pool().clone())
         .icp_evidence(20, 8_000)
         .await
@@ -78,6 +122,12 @@ pub async fn generate_icp_hypotheses(
                 .map_err(AppError::from)
                 .map_err(CommandError::from)?,
         ),
+        (
+            "currentIcp".to_owned(),
+            serde_json::to_value(&current_icp)
+                .map_err(AppError::from)
+                .map_err(CommandError::from)?,
+        ),
         ("historyEvidence".to_owned(), history),
     ]);
     let task = structured_task::<IcpHypotheses>("icp_hypotheses", ICP_PROMPT, context);
@@ -86,7 +136,6 @@ pub async fn generate_icp_hypotheses(
         .run::<IcpHypotheses>(Uuid::new_v4(), provider, task)
         .await
         .map_err(CommandError::from)?;
-    let repository = IcpRepository::new(state.database.pool().clone());
     for hypothesis in hypotheses.hypotheses.iter().cloned() {
         repository
             .save_hypothesis(founder.id, hypothesis)
@@ -94,6 +143,35 @@ pub async fn generate_icp_hypotheses(
             .map_err(CommandError::from)?;
     }
     Ok(hypotheses)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviseIcpInput {
+    pub hypothesis_id: String,
+    pub hypothesis: crate::domain::icp::IcpHypothesisDraft,
+}
+
+#[tauri::command]
+pub async fn revise_icp_hypothesis(
+    input: ReviseIcpInput,
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    let founder = FounderRepository::new(state.database.pool().clone())
+        .latest()
+        .await
+        .map_err(CommandError::from)?
+        .ok_or_else(|| {
+            CommandError::from(AppError::Validation(
+                "complete founder onboarding first".to_owned(),
+            ))
+        })?;
+    let hypothesis_id = parse_uuid(&input.hypothesis_id)?;
+    let revision_id = IcpRepository::new(state.database.pool().clone())
+        .save_revision(founder.id, hypothesis_id, input.hypothesis)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(revision_id.to_string())
 }
 
 #[tauri::command]

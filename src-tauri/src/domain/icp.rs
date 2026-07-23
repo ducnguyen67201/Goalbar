@@ -3,6 +3,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::error::{AppError, AppResult};
+use crate::validation::require_non_empty;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IcpHypothesisDraft {
@@ -14,6 +17,45 @@ pub struct IcpHypothesisDraft {
     pub objections: Vec<String>,
     pub language: Vec<String>,
     pub confidence: f64,
+}
+
+impl IcpHypothesisDraft {
+    pub fn validate(mut self) -> AppResult<Self> {
+        self.role = require_non_empty(&self.role, "ICP role", 240)?;
+        self.situation = require_non_empty(&self.situation, "ICP situation", 2_000)?;
+        self.urgent_problem = require_non_empty(&self.urgent_problem, "ICP urgent problem", 2_000)?;
+        self.current_workaround =
+            require_non_empty(&self.current_workaround, "ICP current workaround", 2_000)?;
+        self.desired_outcome =
+            require_non_empty(&self.desired_outcome, "ICP desired outcome", 2_000)?;
+        self.objections = validated_terms(self.objections, "ICP objections")?;
+        self.language = validated_terms(self.language, "ICP language")?;
+        if !self.confidence.is_finite() || !(0.0..=1.0).contains(&self.confidence) {
+            return Err(AppError::Validation(
+                "ICP confidence must be between 0 and 1".to_owned(),
+            ));
+        }
+        Ok(self)
+    }
+}
+
+fn validated_terms(values: Vec<String>, field: &str) -> AppResult<Vec<String>> {
+    let values = values
+        .into_iter()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if values.len() > 50 {
+        return Err(AppError::Validation(format!(
+            "{field} must contain at most 50 items"
+        )));
+    }
+    if values.iter().any(|value| value.chars().count() > 500) {
+        return Err(AppError::Validation(format!(
+            "each {field} item must be at most 500 characters"
+        )));
+    }
+    Ok(values)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

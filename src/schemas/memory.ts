@@ -12,14 +12,16 @@ export const saveVoiceInputSchema = z.object({
   voice: voiceProfileInputSchema,
 })
 
+const hypothesisTextSchema = z.string().trim().min(1).max(2000)
+
 export const icpHypothesisSchema = z.object({
-  role: z.string(),
-  situation: z.string(),
-  urgentProblem: z.string(),
-  currentWorkaround: z.string(),
-  desiredOutcome: z.string(),
-  objections: z.array(z.string()),
-  language: z.array(z.string()),
+  role: z.string().trim().min(1).max(240),
+  situation: hypothesisTextSchema,
+  urgentProblem: hypothesisTextSchema,
+  currentWorkaround: hypothesisTextSchema,
+  desiredOutcome: hypothesisTextSchema,
+  objections: z.array(z.string().trim().min(1).max(500)).max(50),
+  language: z.array(z.string().trim().min(1).max(500)).max(50),
   confidence: z.number().min(0).max(1),
 })
 
@@ -37,3 +39,7 @@ export const storedIcpHypothesisSchema = icpHypothesisSchema.extend({
 
 export const storedIcpHypothesesSchema = z.array(storedIcpHypothesisSchema)
 export const acceptIcpInputSchema = z.object({ hypothesisId: z.string().uuid() })
+export const reviseIcpInputSchema = z.object({
+  hypothesisId: z.string().uuid(),
+  hypothesis: icpHypothesisSchema,
+})

@@ -31,7 +31,7 @@ impl TodayService {
         .fetch_one(&self.pool)
         .await?;
         let account_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM connected_accounts WHERE status = 'connected'",
+            "SELECT COUNT(*) FROM connected_accounts WHERE status = 'connected' AND client_id != 'goalbar-email-notifications'",
         )
         .fetch_one(&self.pool)
         .await?;

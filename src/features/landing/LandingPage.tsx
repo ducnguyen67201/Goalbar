@@ -14,7 +14,13 @@ import {
   Star,
 } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
+
+import {
+  captureMarketingEvent,
+  captureMarketingPageView,
+  type MarketingAnalyticsEvent,
+} from "@/lib/marketing-analytics"
 
 const goalbarRepositoryUrl = "https://github.com/ducnguyen67201/Goalbar"
 const goalbarRepositoryApiUrl = "https://api.github.com/repos/ducnguyen67201/Goalbar"
@@ -50,6 +56,11 @@ const capabilities = [
 export function LandingPage() {
   const [sceneKey, setSceneKey] = useState(0)
   const githubStars = useGitHubStars()
+  const location = useLocation()
+
+  useEffect(() => {
+    void captureMarketingPageView()
+  }, [location.pathname])
 
   return (
     <div className="gb-landing">
@@ -72,6 +83,7 @@ export function LandingPage() {
             target="_blank"
             rel="noreferrer"
             aria-label={`Star Goalbar on GitHub, ${githubStars} ${githubStars === 1 ? "star" : "stars"}`}
+            onClick={() => trackCta("github", "nav")}
           >
             <Github size={15} aria-hidden="true" />
             <span className="gb-github-label">GitHub</span>
@@ -80,10 +92,10 @@ export function LandingPage() {
               {formatStarCount(githubStars)}
             </span>
           </a>
-          <a className="gb-nav-download" href="#download">
+          <a className="gb-nav-download" href="#download" onClick={() => trackCta("download", "nav")}>
             Get download <Download size={14} aria-hidden="true" />
           </a>
-          <Link className="gb-nav-cta" to="/">
+          <Link className="gb-nav-cta" to="/" onClick={() => trackCta("open_app", "nav")}>
             Open the app <ArrowRight size={15} aria-hidden="true" />
           </Link>
         </div>
@@ -113,10 +125,14 @@ export function LandingPage() {
             </p>
             <DownloadForm placement="hero" />
             <div className="gb-hero-actions">
-              <a className="gb-button gb-button-ghost" href="#why-goalbar">
+              <a
+                className="gb-button gb-button-ghost"
+                href="#why-goalbar"
+                onClick={() => trackCta("why_goalbar", "hero")}
+              >
                 Why Goalbar <ChevronDown size={17} aria-hidden="true" />
               </a>
-              <Link className="gb-hero-open-link" to="/">
+              <Link className="gb-hero-open-link" to="/" onClick={() => trackCta("open_app", "hero")}>
                 Already installed? Open app <ArrowRight size={15} aria-hidden="true" />
               </Link>
             </div>
@@ -272,7 +288,13 @@ export function LandingPage() {
             <button
               className="gb-replay-button"
               type="button"
-              onClick={() => setSceneKey((current) => current + 1)}
+              onClick={() => {
+                setSceneKey((current) => current + 1)
+                void captureMarketingEvent({
+                  name: "marketing_demo_replayed",
+                  properties: { placement: "hero" },
+                })
+              }}
             >
               <Play size={13} fill="currentColor" aria-hidden="true" /> Replay the clicks
             </button>
@@ -362,8 +384,12 @@ export function LandingPage() {
         </a>
         <p>Your local GTM cofounder.</p>
         <div>
-          <a href="#why-goalbar">Why Goalbar</a>
-          <Link to="/">Open app</Link>
+          <a href="#why-goalbar" onClick={() => trackCta("why_goalbar", "footer")}>
+            Why Goalbar
+          </a>
+          <Link to="/" onClick={() => trackCta("open_app", "footer")}>
+            Open app
+          </Link>
         </div>
       </footer>
     </div>
@@ -457,6 +483,10 @@ function DownloadForm({ placement }: { placement: "hero" | "final" }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitted(true)
+    void captureMarketingEvent({
+      name: "marketing_download_requested",
+      properties: { placement },
+    })
   }
 
   if (submitted) {
@@ -510,4 +540,14 @@ function DownloadForm({ placement }: { placement: "hero" | "final" }) {
       </small>
     </form>
   )
+}
+
+function trackCta(
+  cta: Extract<MarketingAnalyticsEvent, { name: "marketing_cta_clicked" }>["properties"]["cta"],
+  placement: Extract<MarketingAnalyticsEvent, { name: "marketing_cta_clicked" }>["properties"]["placement"],
+) {
+  void captureMarketingEvent({
+    name: "marketing_cta_clicked",
+    properties: { cta, placement },
+  })
 }

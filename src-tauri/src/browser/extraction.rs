@@ -139,7 +139,7 @@ pub fn scroll(
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
-async fn evaluate(
+pub(crate) async fn evaluate(
     app: &AppHandle,
     manager: &BrowserManager,
     tab_id: Uuid,
@@ -165,7 +165,7 @@ async fn evaluate(
         .map_err(|_| AppError::Internal("browser callback closed".to_owned()))
 }
 
-fn parse_evaluation<T: for<'de> Deserialize<'de>>(raw: &str) -> AppResult<T> {
+pub(crate) fn parse_evaluation<T: for<'de> Deserialize<'de>>(raw: &str) -> AppResult<T> {
     let first: serde_json::Value = serde_json::from_str(raw)?;
     match first {
         serde_json::Value::String(value) => Ok(serde_json::from_str(&value)?),
