@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   invokeValidated: vi.fn(),
   writeText: vi.fn(),
   openUrlInPlatform: vi.fn(),
+  setBrowserViewsObscured: vi.fn(),
 }))
 
 vi.mock("@/lib/tauri", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/features/browser/useBrowserSurface", () => ({
     error: null,
     isNative: true,
     openUrlInPlatform: mocks.openUrlInPlatform,
+    setBrowserViewsObscured: mocks.setBrowserViewsObscured,
     back: vi.fn(),
     forward: vi.fn(),
     reload: vi.fn(),
@@ -76,6 +78,23 @@ const notifications = [
   },
 ] as const
 
+const browserScannedLinkedIn = {
+  id: "80f67a97-bf51-462f-b6fa-f878ea794f30",
+  platform: "linkedin",
+  remoteId: "browser:messaging/thread/2-OTUxNmNhYjAtZjU2MS00MzFmLTgwNzUtNTAzYTNjM2MxYTZlXzEwMA==",
+  kind: "direct_message",
+  displayName: "Vy Nguyen",
+  preview: "Status is reachable",
+  unreadCount: 0,
+  replyCapability: "unsupported",
+  remoteUrl:
+    "https://www.linkedin.com/messaging/thread/2-OTUxNmNhYjAtZjU2MS00MzFmLTgwNzUtNTAzYTNjM2MxYTZlXzEwMA==/",
+  profileUrl: "https://www.linkedin.com/in/vy-nguyen/",
+  source: "browser_scan",
+  contentState: "notification_excerpt",
+  updatedAt: "2026-07-23T20:00:00Z",
+} as const
+
 function renderInbox() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -93,7 +112,9 @@ describe("InboxPage email notifications", () => {
     mocks.invokeValidated.mockReset()
     mocks.writeText.mockReset()
     mocks.openUrlInPlatform.mockReset()
-    mocks.openUrlInPlatform.mockResolvedValue({ id: "browser-tab" })
+    mocks.setBrowserViewsObscured.mockReset()
+    mocks.openUrlInPlatform.mockResolvedValue({ id: "14912f0d-7f70-41bf-93f6-c996e1b873e9" })
+    mocks.setBrowserViewsObscured.mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: mocks.writeText },
@@ -179,7 +200,9 @@ describe("InboxPage email notifications", () => {
     const user = userEvent.setup()
     renderInbox()
 
-    const search = screen.getByRole("searchbox", { name: "Search conversations" })
+    const controls = screen.getByRole("toolbar", { name: "Inbox controls" })
+    const search = within(controls).getByRole("searchbox", { name: "Search conversations" })
+    expect(screen.queryByText("Local signals · platform truth")).not.toBeInTheDocument()
     await screen.findByText("Ari")
 
     await user.type(search, "compare notes")
@@ -250,6 +273,59 @@ describe("InboxPage email notifications", () => {
     expect(screen.getByText("Live platform thread")).toBeInTheDocument()
     await waitFor(() =>
       expect(mocks.openUrlInPlatform).toHaveBeenCalledWith("https://x.com/ari/status/1", "x"),
+    )
+  })
+
+  it("opens a scanned LinkedIn conversation by its saved direct URL", async () => {
+    const user = userEvent.setup()
+    mocks.invokeOutput.mockImplementation((command: string) => {
+      if (command === "list_conversations") return Promise.resolve([browserScannedLinkedIn])
+      throw new Error(`Unexpected output command: ${command}`)
+    })
+    renderInbox()
+
+    await user.click(await screen.findByRole("button", { name: "Open conversation with Vy Nguyen" }))
+
+    await waitFor(() =>
+      expect(mocks.openUrlInPlatform).toHaveBeenCalledWith(browserScannedLinkedIn.remoteUrl, "linkedin"),
+    )
+    expect(mocks.invokeValidated).not.toHaveBeenCalledWith(
+      "open_browser_inbox_conversation",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it("hides the native browser surface while the scan menu is open", async () => {
+    const user = userEvent.setup()
+    renderInbox()
+
+    await user.click(await screen.findByRole("button", { name: /Ari/ }))
+    await user.click(screen.getByText("Scan inbox"))
+
+    await waitFor(() => expect(mocks.setBrowserViewsObscured).toHaveBeenLastCalledWith(true))
+
+    await user.click(screen.getByRole("button", { name: "Scan X inbox" }))
+    await waitFor(() => expect(mocks.setBrowserViewsObscured).toHaveBeenLastCalledWith(false))
+  })
+
+  it("opens a saved scanned profile in the integrated browser when the name is clicked", async () => {
+    const user = userEvent.setup()
+    mocks.invokeOutput.mockImplementation((command: string) => {
+      if (command === "list_conversations") return Promise.resolve([browserScannedLinkedIn])
+      throw new Error(`Unexpected output command: ${command}`)
+    })
+    renderInbox()
+
+    await user.click(await screen.findByRole("button", { name: "Open Vy Nguyen profile" }))
+
+    expect(await screen.findByRole("region", { name: "Live linkedin profile" })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(mocks.openUrlInPlatform).toHaveBeenCalledWith(
+        "https://www.linkedin.com/in/vy-nguyen/",
+        "linkedin",
+      ),
     )
   })
 

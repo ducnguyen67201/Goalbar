@@ -28,6 +28,7 @@ pub struct ConversationSummary {
     pub unread_count: u32,
     pub reply_capability: CapabilityState,
     pub remote_url: Option<String>,
+    pub profile_url: Option<String>,
     pub source: ConversationSource,
     pub content_state: ConversationContentState,
     pub updated_at: String,

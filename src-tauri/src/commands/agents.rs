@@ -3,7 +3,9 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
-use crate::adapters::agent::app_server::{CodexChatState, CodexChatTurnResult};
+use crate::adapters::agent::app_server::{
+    CodexChatCollection, CodexChatState, CodexChatTurnResult,
+};
 use crate::adapters::agent::{AgentResult, AgentStatus};
 use crate::app_state::AppState;
 use crate::error::{AppError, CommandError};
@@ -21,8 +23,21 @@ pub struct RunAgentInput {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SendCodexChatInput {
+    pub thread_id: String,
     pub message: String,
     pub active_tab_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SelectCodexChatInput {
+    pub thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InterruptCodexChatInput {
+    pub thread_id: String,
 }
 
 #[tauri::command]
@@ -58,6 +73,9 @@ pub async fn send_codex_chat_message(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CodexChatTurnResult, CommandError> {
+    let thread_id = Uuid::parse_str(&input.thread_id)
+        .map_err(|error| CommandError::from(AppError::Validation(error.to_string())))?
+        .to_string();
     let active_tab_id = input
         .active_tab_id
         .as_deref()
@@ -66,23 +84,62 @@ pub async fn send_codex_chat_message(
         .map_err(|error| CommandError::from(AppError::Validation(error.to_string())))?;
     state
         .codex_chat
-        .send_message(&app, &input.message, active_tab_id)
+        .send_message(&app, &thread_id, &input.message, active_tab_id)
         .await
         .map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub async fn get_codex_chat_state(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CodexChatState, CommandError> {
-    Ok(state.codex_chat.current_state().await)
+    state
+        .codex_chat
+        .current_state(&app)
+        .await
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
-pub async fn interrupt_codex_chat(state: State<'_, AppState>) -> Result<bool, CommandError> {
+pub async fn list_codex_chats(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CodexChatCollection, CommandError> {
     state
         .codex_chat
-        .interrupt()
+        .list_chats(&app)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn select_codex_chat(
+    input: SelectCodexChatInput,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CodexChatState, CommandError> {
+    let thread_id = Uuid::parse_str(&input.thread_id)
+        .map_err(|error| CommandError::from(AppError::Validation(error.to_string())))?
+        .to_string();
+    state
+        .codex_chat
+        .select_thread(&app, &thread_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn interrupt_codex_chat(
+    input: InterruptCodexChatInput,
+    state: State<'_, AppState>,
+) -> Result<bool, CommandError> {
+    let thread_id = Uuid::parse_str(&input.thread_id)
+        .map_err(|error| CommandError::from(AppError::Validation(error.to_string())))?
+        .to_string();
+    state
+        .codex_chat
+        .interrupt(&thread_id)
         .await
         .map_err(CommandError::from)
 }

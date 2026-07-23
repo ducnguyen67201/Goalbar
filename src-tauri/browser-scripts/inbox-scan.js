@@ -26,6 +26,26 @@
       return null
     }
   }
+  const canonicalProfile = (value) => {
+    try {
+      const url = new URL(value, window.location.href)
+      if (platform === "linkedin") {
+        const host = url.hostname.toLocaleLowerCase().replace(/^www\./, "")
+        const segments = url.pathname.split("/").filter(Boolean)
+        if (url.protocol !== "https:" || host !== "linkedin.com" || segments[0]?.toLowerCase() !== "in") {
+          return null
+        }
+        url.pathname = `/${segments.slice(0, 2).join("/")}/`
+      } else if (!isProfileUrl(url.toString())) {
+        return null
+      }
+      url.search = ""
+      url.hash = ""
+      return url.toString()
+    } catch {
+      return null
+    }
+  }
   const isConversationUrl = (value) => {
     try {
       const url = new URL(value, window.location.href)
@@ -36,16 +56,40 @@
         )
       }
       if (platform === "linkedin") {
+        const segments = path.split("/").filter(Boolean)
         return (
-          /^\/messaging\/thread\/[^/]+$/.test(path) &&
-          !path
-            .split("/")
-            .filter(Boolean)
-            .some((segment) => segment.toLowerCase() === "undefined")
+          segments[0]?.toLowerCase() === "messaging" &&
+          segments[1]?.toLowerCase() === "thread" &&
+          Boolean(segments[2]) &&
+          segments[2]?.toLowerCase() !== "undefined" &&
+          (segments.length === 3 || (segments.length === 4 && segments[3]?.toLowerCase() === "undefined"))
         )
       }
       if (platform === "reddit") {
         return /^\/message\/messages\/[^/]+/.test(path) || /^\/room\/[^/]+/.test(path)
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+  const isProfileUrl = (value) => {
+    try {
+      const url = new URL(value, window.location.href)
+      const host = url.hostname.toLocaleLowerCase().replace(/^www\./, "")
+      const path = url.pathname.replace(/\/+$/, "")
+      if (platform === "x") {
+        return (
+          (host === "x.com" || host === "twitter.com") &&
+          /^\/[^/]+$/.test(path) &&
+          !/^\/(?:home|messages|explore|notifications|i|search|settings)$/i.test(path)
+        )
+      }
+      if (platform === "linkedin") {
+        return host === "linkedin.com" && /^\/in\/[^/]+$/i.test(path)
+      }
+      if (platform === "reddit") {
+        return host === "reddit.com" && /^\/(?:user|u)\/[^/]+$/i.test(path)
       }
       return false
     } catch {
@@ -58,6 +102,17 @@
       : platform === "linkedin"
         ? "https://www.linkedin.com/messaging/"
         : "https://www.reddit.com/message/inbox"
+  const canonicalConversation = (value) => {
+    const result = canonical(value)
+    if (!result || platform !== "linkedin") return result
+    const url = new URL(result)
+    const segments = url.pathname.split("/").filter(Boolean)
+    if (segments.at(-1)?.toLowerCase() === "undefined") {
+      segments.pop()
+      url.pathname = `/${segments.join("/")}/`
+    }
+    return url.toString()
+  }
   const pageState = () => {
     const path = window.location.pathname.toLowerCase()
     if (/login|signin|signup|auth/.test(path)) return "login_required"
@@ -155,10 +210,16 @@
     Array.from(row.matches?.("a[href]") ? [row] : row.querySelectorAll("a[href]")).find((anchor) =>
       isConversationUrl(anchor.href),
     )
+  const findProfileLink = (row) =>
+    Array.from(row.matches?.("a[href]") ? [row] : row.querySelectorAll("a[href]")).find((anchor) =>
+      isProfileUrl(anchor.href),
+    )
   const itemFor = (row) => {
     const rowLines = lines(row)
     const link = findLink(row)
-    const remoteUrl = canonical(link?.href) || targetUrl
+    const profileLink = findProfileLink(row)
+    const remoteUrl = canonicalConversation(link?.href) || targetUrl
+    const profileUrl = canonicalProfile(profileLink?.href)
     const timestampNode = row.querySelector("time")
     const timestamp =
       normalize(timestampNode?.getAttribute("datetime")) ||
@@ -207,12 +268,11 @@
       preview,
       unread,
       remoteUrl,
+      profileUrl,
       timestamp,
       direction,
     }
   }
-  const items = rows.map(itemFor).filter(Boolean).slice(0, 100)
-
   const scrollableAncestor = (row) => {
     let current = row?.parentElement
     while (current && current !== document.body) {
@@ -236,8 +296,89 @@
       scrollNode,
       startScrollTop: scrollNode?.scrollTop || 0,
       bottomPasses: 0,
+      profileUrls: Object.create(null),
+      attemptedProfiles: Object.create(null),
+      pendingProfile: null,
     }
     globalThis[scanKey] = scanState
+  }
+  const rowItems = rows
+    .map((row) => ({ row, item: itemFor(row) }))
+    .filter(({ item }) => Boolean(item))
+    .slice(0, 100)
+  for (const { item } of rowItems) {
+    if (!item.profileUrl) continue
+    scanState.profileUrls[item.remoteId] = item.profileUrl
+    scanState.attemptedProfiles[item.remoteId] = true
+  }
+  const linkedInProfileFor = (displayName) => {
+    const threadProfileLink = document.querySelector(
+      'a.msg-thread__link-to-profile[href*="/in/"], .msg-thread__link-to-profile a[href*="/in/"]',
+    )
+    const threadProfileUrl = canonicalProfile(threadProfileLink?.href)
+    if (threadProfileUrl) return threadProfileUrl
+
+    const targetName = normalize(displayName).toLocaleLowerCase()
+    if (!targetName) return null
+    return Array.from(document.querySelectorAll('a[href*="/in/"]'))
+      .filter((anchor) => {
+        const rect = anchor.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0 || !isProfileUrl(anchor.href)) return false
+        const label = normalize(
+          [
+            anchor.textContent,
+            anchor.getAttribute("aria-label"),
+            anchor.getAttribute("title"),
+            anchor.querySelector("img")?.getAttribute("alt"),
+          ]
+            .filter(Boolean)
+            .join(" "),
+        ).toLocaleLowerCase()
+        return label.includes(targetName)
+      })
+      .map((anchor) => canonicalProfile(anchor.href))
+      .find(Boolean)
+  }
+  if (platform === "linkedin" && scanState.pendingProfile) {
+    const pending = scanState.pendingProfile
+    const profileUrl = linkedInProfileFor(pending.displayName)
+    if (profileUrl) scanState.profileUrls[pending.remoteId] = profileUrl
+    scanState.pendingProfile = null
+  }
+  const items = rowItems.map(({ item }) => ({
+    ...item,
+    profileUrl: scanState.profileUrls[item.remoteId] || item.profileUrl,
+  }))
+  if (platform === "linkedin") {
+    const unresolved = rowItems.find(
+      ({ item }) => !scanState.attemptedProfiles[item.remoteId] && !scanState.profileUrls[item.remoteId],
+    )
+    if (unresolved) {
+      scanState.attemptedProfiles[unresolved.item.remoteId] = true
+      scanState.pendingProfile = {
+        remoteId: unresolved.item.remoteId,
+        displayName: unresolved.item.displayName,
+      }
+      const row = unresolved.row
+      const clickable =
+        (row.matches?.("a, button") && row) ||
+        row.querySelector(".msg-conversations-container__convo-item-link, a[href*='/messaging/thread/']") ||
+        row
+      if (
+        clickable.tagName === "A" &&
+        clickable.pathname
+          .split("/")
+          .filter(Boolean)
+          .some((segment) => segment.toLocaleLowerCase() === "undefined")
+      ) {
+        clickable.addEventListener("click", (event) => event.preventDefault(), {
+          capture: true,
+          once: true,
+        })
+      }
+      clickable.click()
+      return JSON.stringify({ state, items, hasMore: true, madeProgress: true, targetUrl })
+    }
   }
   const scrollNode = scanState.scrollNode
   const canScroll = Boolean(

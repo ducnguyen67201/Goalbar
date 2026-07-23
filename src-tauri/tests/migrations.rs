@@ -208,3 +208,15 @@ async fn migration_fourteen_supports_partial_inbox_scans() {
     .expect("stored partial status");
     assert_eq!(status, "partial");
 }
+
+#[tokio::test]
+async fn migration_fifteen_persists_browser_inbox_profile_links() {
+    let database = Database::in_memory().await.expect("database");
+    let profile_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('browser_inbox_ingestions') WHERE name = 'profile_url'",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("browser inbox profile column");
+    assert_eq!(profile_columns, 1);
+}

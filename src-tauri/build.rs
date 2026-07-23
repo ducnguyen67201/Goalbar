@@ -5,6 +5,8 @@ fn main() {
         "run_agent_task",
         "send_codex_chat_message",
         "get_codex_chat_state",
+        "list_codex_chats",
+        "select_codex_chat",
         "interrupt_codex_chat",
         "new_codex_chat",
         "cancel_job",

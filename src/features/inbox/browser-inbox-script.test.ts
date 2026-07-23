@@ -12,15 +12,20 @@ type ScanBatch = {
     preview: string
     unread: boolean
     remoteUrl: string
+    profileUrl: string | null
     direction: string
   }>
 }
 
-function scan(platform: "x" | "reddit" | "linkedin", path: string): ScanBatch {
+function scan(
+  platform: "x" | "reddit" | "linkedin",
+  path: string,
+  mode: "start" | "next" = "start",
+): ScanBatch {
   window.history.replaceState({}, "", path)
   Object.assign(globalThis, {
     __GOALBAR_INBOX_SCAN_PLATFORM__: platform,
-    __GOALBAR_INBOX_SCAN_MODE__: "start",
+    __GOALBAR_INBOX_SCAN_MODE__: mode,
   })
   const executable = inboxScanScript.replace(";(() =>", "(() =>")
   return JSON.parse(runInThisContext(executable) as string) as ScanBatch
@@ -36,6 +41,8 @@ function setInnerText(selector: string, value: string) {
 describe("browser inbox extraction script", () => {
   beforeEach(() => {
     document.body.innerHTML = ""
+    document.body.addEventListener("click", (event) => event.preventDefault())
+    delete (globalThis as Record<string, unknown>).__GOALBAR_INBOX_SCAN_STATE__
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       x: 0,
       y: 0,
@@ -119,7 +126,7 @@ describe("browser inbox extraction script", () => {
     )
   })
 
-  it("rejects LinkedIn placeholder thread URLs and uses stable per-person identities", () => {
+  it("removes LinkedIn's trailing undefined segment and keeps each direct thread URL", () => {
     document.body.innerHTML = `
       <main>
         <li id="ember47" class="msg-conversation-listitem">
@@ -128,7 +135,7 @@ describe("browser inbox extraction script", () => {
           </a>
         </li>
         <li id="ember55" class="msg-conversation-listitem">
-          <a href="https://www.linkedin.com/messaging/thread/2-mailbox/undefined/">
+          <a href="https://www.linkedin.com/messaging/thread/3-mailbox/undefined/">
             <strong>Sashank Tadepalli</strong><span>Status is reachable</span>
           </a>
         </li>
@@ -141,13 +148,69 @@ describe("browser inbox extraction script", () => {
 
     expect(result.items).toEqual([
       expect.objectContaining({
-        remoteId: "fallback:linkedin:ross mcintyre",
-        remoteUrl: "https://www.linkedin.com/messaging/",
+        remoteId: "messaging/thread/2-mailbox",
+        remoteUrl: "https://www.linkedin.com/messaging/thread/2-mailbox/",
       }),
       expect.objectContaining({
-        remoteId: "fallback:linkedin:sashank tadepalli",
-        remoteUrl: "https://www.linkedin.com/messaging/",
+        remoteId: "messaging/thread/3-mailbox",
+        remoteUrl: "https://www.linkedin.com/messaging/thread/3-mailbox/",
       }),
     ])
+  })
+
+  it("extracts a LinkedIn profile URL separately from the conversation URL", () => {
+    document.body.innerHTML = `
+      <main>
+        <li class="msg-conversation-listitem">
+          <a class="msg-conversation-listitem__participant-names" href="https://www.linkedin.com/in/vy-nguyen/?trk=messaging">
+            <strong>Vy Nguyen</strong>
+          </a>
+          <a href="https://www.linkedin.com/messaging/thread/abc/">
+            <span>Status is reachable</span>
+          </a>
+        </li>
+      </main>
+    `
+    setInnerText(".msg-conversation-listitem", "Vy Nguyen\nStatus is reachable\nNow")
+
+    const result = scan("linkedin", "/messaging/")
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        remoteUrl: "https://www.linkedin.com/messaging/thread/abc/",
+        profileUrl: "https://www.linkedin.com/in/vy-nguyen/",
+      }),
+    )
+  })
+
+  it("opens a LinkedIn row once and captures the profile exposed by the thread header", () => {
+    document.body.innerHTML = `
+      <main>
+        <li id="vy" class="msg-conversation-listitem">
+          <button type="button">
+            <strong>Vy Nguyen</strong><span>Status is reachable</span>
+          </button>
+        </li>
+      </main>
+    `
+    setInnerText("#vy", "Vy Nguyen\nStatus is reachable\nNow")
+    document.querySelector("#vy")?.addEventListener("click", () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<section class="msg-thread">
+          <a
+            class="msg-thread__link-to-profile"
+            aria-label="View profile"
+            href="https://www.linkedin.com/in/vy-nguyen/overlay/contact-info/?trk=messaging"
+          ></a>
+        </section>`,
+      )
+    })
+
+    const first = scan("linkedin", "/messaging/")
+    const second = scan("linkedin", "/messaging/", "next")
+
+    expect(first.items[0]?.profileUrl).toBeNull()
+    expect(second.items[0]?.profileUrl).toBe("https://www.linkedin.com/in/vy-nguyen/")
   })
 })

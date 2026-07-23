@@ -9,19 +9,72 @@ import type { Conversation } from "@/schemas/inbox"
 type InboxBrowserPaneProps = {
   conversation: Conversation
   onOpenExternally: (url: string) => void
+  obscured?: boolean
+  targetUrl?: string
+  view?: "thread" | "profile"
 }
 
-export function InboxBrowserPane({ conversation, onOpenExternally }: InboxBrowserPaneProps) {
-  const { surfaceRef, activeTab, error, isNative, openUrlInPlatform, back, forward, reload } =
-    useBrowserSurface()
-  const openedConversation = useRef<string | null>(null)
+const linkedInInboxUrl = "https://www.linkedin.com/messaging/"
+
+function conversationTargetUrl(conversation: Conversation, targetUrl?: string): string | null {
+  if (targetUrl) return targetUrl
+  const remoteUrl = conversation.remoteUrl ?? null
+  if (!remoteUrl || conversation.platform !== "linkedin") return remoteUrl
+
+  try {
+    const parsed = new URL(remoteUrl)
+    const segments = parsed.pathname.split("/").filter(Boolean)
+    const hasRecoverablePlaceholder =
+      segments.length === 4 &&
+      segments[0]?.toLocaleLowerCase() === "messaging" &&
+      segments[1]?.toLocaleLowerCase() === "thread" &&
+      segments[2]?.toLocaleLowerCase() !== "undefined" &&
+      segments[3]?.toLocaleLowerCase() === "undefined"
+    if (hasRecoverablePlaceholder) {
+      parsed.pathname = `/${segments.slice(0, 3).join("/")}/`
+      return parsed.toString()
+    }
+    return segments.some((segment) => segment.toLocaleLowerCase() === "undefined")
+      ? linkedInInboxUrl
+      : remoteUrl
+  } catch {
+    return linkedInInboxUrl
+  }
+}
+
+export function InboxBrowserPane({
+  conversation,
+  onOpenExternally,
+  obscured = false,
+  targetUrl,
+  view = "thread",
+}: InboxBrowserPaneProps) {
+  const {
+    surfaceRef,
+    activeTab,
+    error,
+    isNative,
+    openUrlInPlatform,
+    setBrowserViewsObscured,
+    back,
+    forward,
+    reload,
+  } = useBrowserSurface()
+  const openedTarget = useRef<string | null>(null)
   const [opening, setOpening] = useState(true)
   const [openError, setOpenError] = useState<string | null>(null)
-  const remoteUrl = conversation.remoteUrl
+  const remoteUrl = conversationTargetUrl(conversation, targetUrl)
+  const targetKey = remoteUrl ? `${conversation.id}:${view}:${remoteUrl}` : null
 
   useEffect(() => {
-    if (!remoteUrl || openedConversation.current === conversation.id) return
-    openedConversation.current = conversation.id
+    void setBrowserViewsObscured(obscured).catch((reason: unknown) => {
+      setOpenError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }, [obscured, setBrowserViewsObscured])
+
+  useEffect(() => {
+    if (!remoteUrl || !targetKey || openedTarget.current === targetKey) return
+    openedTarget.current = targetKey
     setOpening(true)
     setOpenError(null)
     void openUrlInPlatform(remoteUrl, conversation.platform)
@@ -29,17 +82,17 @@ export function InboxBrowserPane({ conversation, onOpenExternally }: InboxBrowse
         if (!tab) throw new Error("The browser pane is not ready yet. Select the conversation again.")
       })
       .catch((reason: unknown) => {
-        openedConversation.current = null
+        openedTarget.current = null
         setOpenError(reason instanceof Error ? reason.message : String(reason))
       })
       .finally(() => setOpening(false))
-  }, [conversation.id, conversation.platform, openUrlInPlatform, remoteUrl])
+  }, [conversation, openUrlInPlatform, remoteUrl, targetKey, view])
 
   return (
-    <section className="panel inbox-browser-panel" aria-label={`Live ${conversation.platform} thread`}>
+    <section className="panel inbox-browser-panel" aria-label={`Live ${conversation.platform} ${view}`}>
       <div className="inbox-browser-heading">
         <div>
-          <p className="eyebrow">Live platform thread</p>
+          <p className="eyebrow">Live platform {view}</p>
           <h2>{conversation.displayName}</h2>
         </div>
         <Badge tone="good">

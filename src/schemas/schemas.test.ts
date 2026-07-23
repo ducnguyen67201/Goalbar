@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { bootstrapFixture } from "@/test/fixtures"
 
 import { bootstrapSchema } from "./bootstrap"
-import { codexChatStateSchema } from "./agent"
+import { codexChatCollectionSchema, codexChatStateSchema } from "./agent"
 import { founderInputSchema } from "./founder"
 import {
   browserCaptureInputSchema,
@@ -12,11 +12,7 @@ import {
   prepareBrowserReplyInputSchema,
 } from "./browser"
 import { historyPreviewSchema } from "./history"
-import {
-  browserInboxScanResultSchema,
-  conversationSchema,
-  emailNotificationSyncResultSchema,
-} from "./inbox"
+import { browserInboxScanResultSchema, conversationSchema, emailNotificationSyncResultSchema } from "./inbox"
 import {
   growthLoopOverviewSchema,
   proposeGrowthActionInputSchema,
@@ -47,6 +43,24 @@ describe("boundary schemas", () => {
         ],
       }).messages,
     ).toHaveLength(2)
+  })
+
+  it("accepts a local collection of resumable Codex chats", () => {
+    expect(
+      codexChatCollectionSchema.parse({
+        activeThreadId: "thread-1",
+        chats: [
+          {
+            threadId: "thread-1",
+            title: "ICP research",
+            preview: "Find my ICP",
+            createdAt: 10,
+            updatedAt: 20,
+            status: "active",
+          },
+        ],
+      }).chats[0].status,
+    ).toBe("active")
   })
 
   it("rejects an empty founder profile", () => {

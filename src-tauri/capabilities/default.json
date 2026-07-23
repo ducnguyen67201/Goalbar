@@ -10,6 +10,8 @@
     "allow-run-agent-task",
     "allow-send-codex-chat-message",
     "allow-get-codex-chat-state",
+    "allow-list-codex-chats",
+    "allow-select-codex-chat",
     "allow-interrupt-codex-chat",
     "allow-new-codex-chat",
     "allow-cancel-job",

@@ -13,6 +13,7 @@ pub mod logging;
 pub mod secrets;
 pub mod services;
 pub mod terminal;
+pub mod updates;
 pub mod validation;
 
 use tauri::Manager as _;
@@ -22,6 +23,7 @@ pub fn run() {
     logging::init();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(updates::plugin())
         .setup(|app| {
             let default_dir = app.path().app_data_dir()?;
             let data_dir = config::resolve_data_dir(default_dir)
@@ -31,6 +33,7 @@ pub fn run() {
                 .map_err(|error| Box::<dyn std::error::Error>::from(error.to_string()))?;
             services::scheduler::start(state.clone());
             app.manage(state);
+            updates::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -39,6 +42,8 @@ pub fn run() {
             commands::agents::run_agent_task,
             commands::agents::send_codex_chat_message,
             commands::agents::get_codex_chat_state,
+            commands::agents::list_codex_chats,
+            commands::agents::select_codex_chat,
             commands::agents::interrupt_codex_chat,
             commands::agents::new_codex_chat,
             commands::agents::cancel_job,

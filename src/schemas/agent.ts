@@ -72,6 +72,7 @@ export const founderChatAgentResultSchema = z
 
 export const sendCodexChatInputSchema = z
   .object({
+    threadId: z.string().min(1),
     message: z.string().trim().min(1).max(20_000),
     activeTabId: z.string().uuid().nullable(),
   })
@@ -87,7 +88,7 @@ export const codexChatTurnResultSchema = z
 
 export const codexChatMessageSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.string().min(1),
     role: z.enum(["user", "assistant"]),
     body: z.string().max(40_000),
   })
@@ -97,6 +98,38 @@ export const codexChatStateSchema = z
   .object({
     threadId: z.string().min(1).nullable(),
     messages: z.array(codexChatMessageSchema).max(200),
+  })
+  .strict()
+
+export const codexChatStatusSchema = z.enum(["not_loaded", "idle", "active", "system_error"])
+
+export const codexChatSummarySchema = z
+  .object({
+    threadId: z.string().min(1),
+    title: z.string().trim().min(1).max(64),
+    preview: z.string(),
+    createdAt: z.number().int(),
+    updatedAt: z.number().int(),
+    status: codexChatStatusSchema,
+  })
+  .strict()
+
+export const codexChatCollectionSchema = z
+  .object({
+    activeThreadId: z.string().min(1),
+    chats: z.array(codexChatSummarySchema).min(1).max(100),
+  })
+  .strict()
+
+export const selectCodexChatInputSchema = z
+  .object({
+    threadId: z.string().min(1),
+  })
+  .strict()
+
+export const interruptCodexChatInputSchema = z
+  .object({
+    threadId: z.string().min(1),
   })
   .strict()
 
@@ -150,6 +183,7 @@ export type AgentStatus = z.infer<typeof agentStatusSchema>
 export type EngagementSuggestion = z.infer<typeof engagementSuggestionSchema>
 export type FounderChatResearchRequest = z.infer<typeof founderChatResearchRequestSchema>
 export type FounderChatTurn = z.infer<typeof founderChatTurnSchema>
+export type CodexChatSummary = z.infer<typeof codexChatSummarySchema>
 export type CodexChatEvent = z.infer<typeof codexChatEventSchema>
 export type CodexChatState = z.infer<typeof codexChatStateSchema>
 export type CodexChatTurnResult = z.infer<typeof codexChatTurnResultSchema>

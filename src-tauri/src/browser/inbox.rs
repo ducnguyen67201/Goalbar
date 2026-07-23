@@ -50,6 +50,7 @@ pub struct BrowserInboxItem {
     pub preview: String,
     pub unread: bool,
     pub remote_url: String,
+    pub profile_url: Option<String>,
     pub timestamp: Option<String>,
     pub direction: BrowserInboxDirection,
 }
@@ -107,6 +108,15 @@ impl BrowserInboxScanProgress {
         remote_ids: impl IntoIterator<Item = &'a str>,
         has_more: bool,
     ) -> Option<BrowserInboxScanStop> {
+        self.observe_batch(remote_ids, has_more, false)
+    }
+
+    fn observe_batch<'a>(
+        &mut self,
+        remote_ids: impl IntoIterator<Item = &'a str>,
+        has_more: bool,
+        made_progress: bool,
+    ) -> Option<BrowserInboxScanStop> {
         self.batch_count += 1;
         let mut new_items = 0;
         let mut reached_known_conversation = false;
@@ -114,7 +124,7 @@ impl BrowserInboxScanProgress {
             reached_known_conversation |= self.known_remote_ids.contains(remote_id);
             new_items += usize::from(self.observed_remote_ids.insert(remote_id.to_owned()));
         }
-        self.stalled_batches = if new_items == 0 {
+        self.stalled_batches = if new_items == 0 && !made_progress {
             self.stalled_batches.saturating_add(1)
         } else {
             0
@@ -158,6 +168,8 @@ struct RawBatch {
     state: BrowserInboxPageState,
     items: Vec<RawItem>,
     has_more: bool,
+    #[serde(default)]
+    made_progress: bool,
     target_url: String,
 }
 
@@ -169,6 +181,7 @@ struct RawItem {
     preview: String,
     unread: bool,
     remote_url: String,
+    profile_url: Option<String>,
     timestamp: Option<String>,
     direction: BrowserInboxDirection,
 }
@@ -210,9 +223,10 @@ async fn scan_batches(
             .into_iter()
             .filter_map(|raw| normalize_item(raw, platform))
             .collect::<Vec<_>>();
-        let decision = progress.observe(
+        let decision = progress.observe_batch(
             normalized.iter().map(|item| item.remote_id.as_str()),
             batch.has_more,
+            batch.made_progress,
         );
         for item in normalized {
             items.insert(item.remote_id.clone(), item);
@@ -277,6 +291,10 @@ fn normalize_item(raw: RawItem, platform: Platform) -> Option<BrowserInboxItem> 
         ));
     }
     let preview = bounded(&raw.preview, 600);
+    let profile_url = raw
+        .profile_url
+        .as_deref()
+        .and_then(|value| normalized_profile_url(value, platform));
     Some(BrowserInboxItem {
         remote_id,
         display_name,
@@ -287,6 +305,7 @@ fn normalize_item(raw: RawItem, platform: Platform) -> Option<BrowserInboxItem> 
         },
         unread: raw.unread,
         remote_url: remote_url.to_string(),
+        profile_url,
         timestamp: raw
             .timestamp
             .map(|value| bounded(&value, 80))
@@ -296,16 +315,58 @@ fn normalize_item(raw: RawItem, platform: Platform) -> Option<BrowserInboxItem> 
 }
 
 fn normalized_remote_url(value: &str, platform: Platform) -> Option<url::Url> {
-    let remote_url = strip_tracking(browser_url(value).ok()?);
-    if platform == Platform::Linkedin
-        && remote_url
-            .path_segments()
-            .map(|mut segments| segments.any(|segment| segment.eq_ignore_ascii_case("undefined")))
-            .unwrap_or(false)
-    {
-        return browser_url("https://www.linkedin.com/messaging/").ok();
+    let mut remote_url = strip_tracking(browser_url(value).ok()?);
+    if platform == Platform::Linkedin {
+        let segments = remote_url
+            .path_segments()?
+            .filter(|segment| !segment.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let has_recoverable_placeholder = segments.len() == 4
+            && segments[0].eq_ignore_ascii_case("messaging")
+            && segments[1].eq_ignore_ascii_case("thread")
+            && !segments[2].eq_ignore_ascii_case("undefined")
+            && segments[3].eq_ignore_ascii_case("undefined");
+        if has_recoverable_placeholder {
+            remote_url.set_path(&format!(
+                "/{}/{}/{}/",
+                segments[0], segments[1], segments[2]
+            ));
+        } else if segments
+            .iter()
+            .any(|segment| segment.eq_ignore_ascii_case("undefined"))
+        {
+            return None;
+        }
     }
     Some(remote_url)
+}
+
+fn normalized_profile_url(value: &str, platform: Platform) -> Option<String> {
+    let profile_url = strip_tracking(browser_url(value).ok()?);
+    if platform_from_url(&profile_url) != Some(platform) {
+        return None;
+    }
+    let segments = profile_url
+        .path_segments()?
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    let valid = match platform {
+        Platform::Linkedin => segments.len() == 2 && segments[0].eq_ignore_ascii_case("in"),
+        Platform::Reddit => {
+            segments.len() == 2
+                && (segments[0].eq_ignore_ascii_case("user")
+                    || segments[0].eq_ignore_ascii_case("u"))
+        }
+        Platform::X => {
+            segments.len() == 1
+                && !matches!(
+                    segments[0].to_ascii_lowercase().as_str(),
+                    "home" | "messages" | "explore" | "notifications" | "i" | "search" | "settings"
+                )
+        }
+    };
+    valid.then(|| profile_url.to_string())
 }
 
 fn bounded(value: &str, maximum: usize) -> String {
@@ -346,6 +407,7 @@ mod tests {
                 preview: "A useful note".to_owned(),
                 unread: true,
                 remote_url: "https://x.com/messages/123?tracking=1".to_owned(),
+                profile_url: Some("https://x.com/ari?ref=messages".to_owned()),
                 timestamp: Some("6d".to_owned()),
                 direction: BrowserInboxDirection::Inbound,
             },
@@ -353,6 +415,7 @@ mod tests {
         )
         .expect("valid item");
         assert_eq!(valid.remote_url, "https://x.com/messages/123");
+        assert_eq!(valid.profile_url.as_deref(), Some("https://x.com/ari"));
         assert!(valid.unread);
         assert_eq!(valid.direction, BrowserInboxDirection::Inbound);
 
@@ -366,6 +429,7 @@ mod tests {
                         preview: "No".to_owned(),
                         unread: false,
                         remote_url: String::new(),
+                        profile_url: None,
                         timestamp: None,
                         direction: BrowserInboxDirection::Inbound,
                     }
@@ -377,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn linkedin_placeholder_thread_urls_fall_back_to_the_inbox() {
+    fn linkedin_placeholder_thread_urls_keep_the_direct_thread_id() {
         let item = normalize_item(
             RawItem {
                 remote_id: "fallback:linkedin:ross mcintyre".to_owned(),
@@ -386,14 +450,24 @@ mod tests {
                 unread: false,
                 remote_url: "https://www.linkedin.com/messaging/thread/2-mailbox/undefined/"
                     .to_owned(),
+                profile_url: Some(
+                    "https://www.linkedin.com/in/ross-mcintyre/?trk=messages".to_owned(),
+                ),
                 timestamp: None,
                 direction: BrowserInboxDirection::Inbound,
             },
             Platform::Linkedin,
         )
-        .expect("the row remains useful without a false deep link");
+        .expect("the real thread id remains usable");
 
-        assert_eq!(item.remote_url, "https://www.linkedin.com/messaging/");
+        assert_eq!(
+            item.remote_url,
+            "https://www.linkedin.com/messaging/thread/2-mailbox/"
+        );
+        assert_eq!(
+            item.profile_url.as_deref(),
+            Some("https://www.linkedin.com/in/ross-mcintyre/")
+        );
     }
 
     #[test]
@@ -424,5 +498,15 @@ mod tests {
             progress.observe(["known-conversation"], true),
             Some(BrowserInboxScanStop::KnownConversation)
         );
+    }
+
+    #[test]
+    fn profile_discovery_keeps_a_full_scan_from_looking_stalled() {
+        let mut progress =
+            BrowserInboxScanProgress::new(BrowserInboxScanMode::Initial, HashSet::new());
+
+        for _ in 0..20 {
+            assert_eq!(progress.observe_batch(["conversation"], true, true), None);
+        }
     }
 }

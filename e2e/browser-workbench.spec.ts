@@ -19,6 +19,18 @@ test("browser workbench gives persistent Codex chat a bounded Browser Use tool",
   await expect(page.getByText("Called directly by the persistent Codex chat")).toBeVisible()
   await expect(page.getByRole("button", { name: "Run approved research" })).toHaveCount(0)
 
+  const chatTabs = page.getByRole("navigation", { name: "Codex chats" })
+  await page.getByRole("button", { name: "New Codex chat" }).click()
+  await expect(chatTabs.getByRole("button")).toHaveCount(2)
+  await page.getByRole("textbox", { name: "Chat message" }).fill("Plan one founder post for today")
+  await page.getByRole("button", { name: "Send message" }).click()
+  await expect(page.locator(".chat-message.user").getByText("Plan one founder post for today")).toBeVisible()
+  await chatTabs.getByRole("button", { name: "Find me good 5 posts for ICP signals" }).click()
+  await expect(
+    page.locator(".chat-message.user").getByText("Find me good 5 posts for ICP signals"),
+  ).toBeVisible()
+  await expect(page.locator(".chat-message.user").getByText("Plan one founder post for today")).toHaveCount(0)
+
   const address = page.getByRole("textbox", { name: "Browser address" })
   await address.fill("reddit.com/r/startups")
   await address.press("Enter")

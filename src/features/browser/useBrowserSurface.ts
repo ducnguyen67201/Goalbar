@@ -50,11 +50,46 @@ const previewTab: BrowserTab = {
 export function useBrowserSurface() {
   const surfaceRef = useRef<HTMLDivElement>(null)
   const [tabs, setTabs] = useState<BrowserTab[]>(isTauriRuntime() ? [] : [previewTab])
+  const tabsRef = useRef(tabs)
+  const obscuredTabIdRef = useRef<string | null>(null)
+  const visibilityTaskRef = useRef<Promise<void>>(Promise.resolve())
   const [error, setError] = useState<string | null>(null)
   const [newWindowUrl, setNewWindowUrl] = useState<string | null>(null)
   const [startPageOpen, setStartPageOpen] = useState(true)
   const visibleTabs = deduplicateBrowserTabs(tabs)
   const activeTab = startPageOpen ? null : (visibleTabs.find((tab) => tab.active) ?? null)
+
+  useEffect(() => {
+    tabsRef.current = tabs
+  }, [tabs])
+
+  const setBrowserViewsObscured = useCallback((obscured: boolean): Promise<void> => {
+    visibilityTaskRef.current = visibilityTaskRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (!isTauriRuntime()) return
+        if (obscured) {
+          const active = deduplicateBrowserTabs(tabsRef.current).find((tab) => tab.active)
+          if (active) obscuredTabIdRef.current = active.id
+          await invokeOutput("hide_browser_views", {}, z.boolean())
+          return
+        }
+
+        const tabId = obscuredTabIdRef.current
+        if (!tabId) return
+        const input = { tabId }
+        const restored = await invokeValidated(
+          "activate_browser_tab",
+          { input },
+          browserTabInputSchema,
+          browserTabSchema,
+        )
+        setTabs((current) => upsertBrowserTab(current, restored))
+        setStartPageOpen(false)
+        obscuredTabIdRef.current = null
+      })
+    return visibilityTaskRef.current
+  }, [])
 
   const refresh = useCallback(async (): Promise<BrowserTab[]> => {
     if (!isTauriRuntime()) return []
@@ -328,6 +363,7 @@ export function useBrowserSurface() {
     activate,
     navigate,
     openUrlInPlatform,
+    setBrowserViewsObscured,
     prepareReply,
     close,
     back: () => simpleAction("browser_go_back"),

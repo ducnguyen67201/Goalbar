@@ -89,7 +89,7 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
     .await?;
     let browser_inbox = json_array(
         state.database.pool(),
-        "SELECT json_group_array(json_object('platform', b.platform, 'remoteId', b.remote_id, 'remoteUrl', b.remote_url, 'firstSeenAt', b.first_seen_at, 'lastSeenAt', b.last_seen_at, 'lastScannedAt', b.last_scanned_at, 'displayName', c.notification_display_name, 'seenAt', c.seen_at, 'preview', COALESCE((SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY sent_at DESC LIMIT 1), ''))) FROM browser_inbox_ingestions b JOIN conversations c ON c.id = b.conversation_id",
+        "SELECT json_group_array(json_object('platform', b.platform, 'remoteId', b.remote_id, 'remoteUrl', b.remote_url, 'profileUrl', b.profile_url, 'firstSeenAt', b.first_seen_at, 'lastSeenAt', b.last_seen_at, 'lastScannedAt', b.last_scanned_at, 'displayName', c.notification_display_name, 'seenAt', c.seen_at, 'preview', COALESCE((SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY sent_at DESC LIMIT 1), ''))) FROM browser_inbox_ingestions b JOIN conversations c ON c.id = b.conversation_id",
     )
     .await?;
     let saved_browser_replies = json_array(

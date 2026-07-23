@@ -57,6 +57,10 @@ No `.env` is required. Optional diagnostics: `RUST_LOG` and `GOALBAR_HOME`. If m
 
 The hosted `/landing` marketing page can optionally send anonymous pageviews and conversion events to PostHog. Copy `.env.example` to `.env.local`, set `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` from the PostHog web installation snippet, and add the same variables to the Vercel project. This integration does not initialize inside the Tauri app, record sessions, autocapture page content, persist visitor identifiers, or send download-form email addresses.
 
+Release builds can update in place and relaunch automatically instead of requiring another DMG
+drag-install. See [releasing Goalbar](docs/releases.md) for the one-time signing setup and release
+workflow.
+
 ## Validation
 
 ```bash

@@ -12,6 +12,7 @@ export const conversationSchema = z.object({
   unreadCount: z.number().int().nonnegative(),
   replyCapability: capabilityStateSchema,
   remoteUrl: z.string().nullable().optional(),
+  profileUrl: z.string().nullable().optional(),
   source: z.enum(["platform_api", "email_notification", "browser_scan"]),
   contentState: z.enum(["complete", "notification_excerpt", "link_only"]),
   updatedAt: z.string(),

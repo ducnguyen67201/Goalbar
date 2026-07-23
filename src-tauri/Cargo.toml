@@ -34,6 +34,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2.10.1"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }

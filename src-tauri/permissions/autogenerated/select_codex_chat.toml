@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-select-codex-chat"
+description = "Enables the select_codex_chat command without any pre-configured scope."
+commands.allow = ["select_codex_chat"]
+
+[[permission]]
+identifier = "deny-select-codex-chat"
+description = "Denies the select_codex_chat command without any pre-configured scope."
+commands.deny = ["select_codex_chat"]

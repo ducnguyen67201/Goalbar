@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "app-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    runs-on: macos-latest
+    env:
+      APPLE_SIGNING_IDENTITY: "-"
+      GOALBAR_UPDATER_PUBLIC_KEY: ${{ vars.GOALBAR_UPDATER_PUBLIC_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Validate release configuration
+        shell: bash
+        run: |
+          expected_tag="app-v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME must match $expected_tag"
+            exit 1
+          fi
+          if [[ -z "$GOALBAR_UPDATER_PUBLIC_KEY" ]]; then
+            echo "::error::Repository variable GOALBAR_UPDATER_PUBLIC_KEY is required"
+            exit 1
+          fi
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "::error::Repository secret TAURI_SIGNING_PRIVATE_KEY is required"
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Goalbar v__VERSION__"
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+          args: >-
+            --config src-tauri/tauri.release.conf.json
+            --target ${{ matrix.target }}

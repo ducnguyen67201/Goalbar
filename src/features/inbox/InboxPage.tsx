@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  Inbox,
   MailCheck,
   RefreshCw,
   Search,
@@ -65,6 +64,8 @@ export function InboxPage() {
   const [search, setSearch] = useState("")
   const [composerOpen, setComposerOpen] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [profileTargetUrl, setProfileTargetUrl] = useState<string | null>(null)
+  const [scanMenuOpen, setScanMenuOpen] = useState(false)
   const conversations = useQuery({
     queryKey: queryKeys.conversations,
     queryFn: () =>
@@ -171,6 +172,7 @@ export function InboxPage() {
       setBody("")
       setApprovalId(null)
       setSelected(null)
+      setProfileTargetUrl(null)
     },
   })
   const openPlatform = useMutation({
@@ -225,11 +227,21 @@ export function InboxPage() {
 
   const selectConversation = (conversation: Conversation) => {
     setSelected({ ...conversation, unreadCount: 0 })
+    setProfileTargetUrl(null)
     setBody("")
     setApprovalId(null)
     setCopied(false)
     setComposerOpen(true)
     if (conversation.unreadCount > 0) markRead.mutate(conversation.id)
+  }
+  const selectProfile = (conversation: Conversation) => {
+    if (!conversation.profileUrl) return
+    setSelected(conversation)
+    setProfileTargetUrl(conversation.profileUrl)
+    setBody("")
+    setApprovalId(null)
+    setCopied(false)
+    setComposerOpen(true)
   }
   const localPreview = selected?.source !== "platform_api"
 
@@ -246,18 +258,9 @@ export function InboxPage() {
 
   return (
     <div className="inbox-workbench-page">
-      <header className="inbox-command-deck">
-        <div className="inbox-command-title">
-          <span className="inbox-command-mark" aria-hidden="true">
-            <Inbox size={16} />
-          </span>
-          <div>
-            <h1>Inbox</h1>
-            <p>Local signals · platform truth</p>
-          </div>
-        </div>
-
-        <label className="inbox-search">
+      <h1 className="sr-only">Inbox</h1>
+      <div className="inbox-filter-deck" role="toolbar" aria-label="Inbox controls">
+        <label className="inbox-search inbox-filter-search">
           <Search size={15} aria-hidden="true" />
           <span className="sr-only">Search conversations</span>
           <Input
@@ -270,51 +273,6 @@ export function InboxPage() {
           {search && <kbd>{visibleConversations.length} found</kbd>}
         </label>
 
-        <div className="inbox-header-actions" aria-label="Inbox scan actions">
-          <details className="inbox-scan-menu">
-            <summary aria-label="Choose an inbox to scan">
-              <RefreshCw size={13} className={browserScan.isPending ? "spin" : undefined} />
-              <span>{browserScan.isPending ? "Scanning…" : "Scan inbox"}</span>
-              <ChevronDown size={12} aria-hidden="true" />
-            </summary>
-            <div className="inbox-scan-popover">
-              <p>
-                <strong>Scan a signed-in tab</strong>
-                <span>Free · local · read-only</span>
-              </p>
-              {(["x", "reddit", "linkedin"] as const).map((platform) => {
-                const name = platform === "x" ? "X" : platform === "reddit" ? "Reddit" : "LinkedIn"
-                const pending = browserScan.isPending && browserScan.variables === platform
-                return (
-                  <button
-                    key={platform}
-                    type="button"
-                    aria-label={`Scan ${name} inbox`}
-                    onClick={() => browserScan.mutate(platform)}
-                    disabled={browserScan.isPending}
-                  >
-                    <span>{name}</span>
-                    <small>{pending ? "Scanning…" : `${platformCounts[platform]} saved`}</small>
-                    <RefreshCw size={12} className={pending ? "spin" : undefined} />
-                  </button>
-                )
-              })}
-            </div>
-          </details>
-          <Button
-            variant="ghost"
-            aria-label="Check Apple Mail"
-            title="Check Apple Mail"
-            onClick={() => sync.mutate()}
-            disabled={sync.isPending}
-          >
-            {sync.isPending ? <RefreshCw size={14} className="spin" /> : <MailCheck size={14} />}
-            Mail
-          </Button>
-        </div>
-      </header>
-
-      <div className="inbox-filter-deck" aria-label="Inbox controls">
         <div className="inbox-filter-chips" aria-label="Filter conversations">
           {inboxFilters.map((option) => (
             <button
@@ -363,6 +321,55 @@ export function InboxPage() {
             </span>
           </div>
         )}
+        <div className="inbox-header-actions" aria-label="Inbox scan actions">
+          <details
+            className="inbox-scan-menu"
+            open={scanMenuOpen}
+            onToggle={(event) => setScanMenuOpen(event.currentTarget.open)}
+          >
+            <summary aria-label="Choose an inbox to scan">
+              <RefreshCw size={13} className={browserScan.isPending ? "spin" : undefined} />
+              <span>{browserScan.isPending ? "Scanning…" : "Scan inbox"}</span>
+              <ChevronDown size={12} aria-hidden="true" />
+            </summary>
+            <div className="inbox-scan-popover">
+              <p>
+                <strong>Scan a signed-in tab</strong>
+                <span>Free · local · read-only</span>
+              </p>
+              {(["x", "reddit", "linkedin"] as const).map((platform) => {
+                const name = platform === "x" ? "X" : platform === "reddit" ? "Reddit" : "LinkedIn"
+                const pending = browserScan.isPending && browserScan.variables === platform
+                return (
+                  <button
+                    key={platform}
+                    type="button"
+                    aria-label={`Scan ${name} inbox`}
+                    onClick={() => {
+                      setScanMenuOpen(false)
+                      browserScan.mutate(platform)
+                    }}
+                    disabled={browserScan.isPending}
+                  >
+                    <span>{name}</span>
+                    <small>{pending ? "Scanning…" : `${platformCounts[platform]} saved`}</small>
+                    <RefreshCw size={12} className={pending ? "spin" : undefined} />
+                  </button>
+                )
+              })}
+            </div>
+          </details>
+          <Button
+            variant="ghost"
+            aria-label="Check Apple Mail"
+            title="Check Apple Mail"
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending}
+          >
+            {sync.isPending ? <RefreshCw size={14} className="spin" /> : <MailCheck size={14} />}
+            Mail
+          </Button>
+        </div>
       </div>
 
       <div className="inbox-layout">
@@ -389,19 +396,43 @@ export function InboxPage() {
               </div>
             ) : (
               visibleConversations.map((conversation) => (
-                <button
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open conversation with ${conversation.displayName}`}
                   className="conversation-row conversation-button"
                   data-unread={conversation.unreadCount > 0}
                   data-selected={selected?.id === conversation.id}
                   key={conversation.id}
                   onClick={() => selectConversation(conversation)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      selectConversation(conversation)
+                    }
+                  }}
                 >
                   <span className="avatar" aria-hidden="true">
                     {conversation.displayName.slice(0, 1).toLocaleUpperCase()}
                   </span>
                   <div className="conversation-copy">
                     <div className="conversation-meta">
-                      <strong>{conversation.displayName}</strong>
+                      {conversation.profileUrl ? (
+                        <button
+                          type="button"
+                          className="conversation-profile-link"
+                          aria-label={`Open ${conversation.displayName} profile`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            selectProfile(conversation)
+                          }}
+                        >
+                          {conversation.displayName}
+                        </button>
+                      ) : (
+                        <strong>{conversation.displayName}</strong>
+                      )}
                       <span>{relativeDate(conversation.updatedAt)}</span>
                     </div>
                     <p>{conversation.preview}</p>
@@ -414,7 +445,7 @@ export function InboxPage() {
                     )}
                     <ArrowUpRight size={14} aria-hidden="true" />
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -433,10 +464,13 @@ export function InboxPage() {
             </section>
           ) : (
             <>
-              {selected.remoteUrl && (
+              {(profileTargetUrl || selected.remoteUrl) && (
                 <InboxBrowserPane
                   conversation={selected}
                   onOpenExternally={(url) => openPlatform.mutate(url)}
+                  obscured={scanMenuOpen}
+                  targetUrl={profileTargetUrl ?? undefined}
+                  view={profileTargetUrl ? "profile" : "thread"}
                 />
               )}
               <section className="reply-panel" data-collapsed={!composerOpen}>

@@ -196,7 +196,35 @@ impl BrowserInboxService {
         .bind(platform.as_str())
         .fetch_one(&self.pool)
         .await?;
-        Ok(if completed {
+        let linkedin_upgrade_needed = if platform == Platform::Linkedin {
+            let profile_upgrade_needed = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM browser_inbox_ingestions WHERE platform = 'linkedin')
+                    AND NOT EXISTS(
+                        SELECT 1 FROM browser_inbox_ingestions
+                        WHERE platform = 'linkedin' AND profile_url IS NOT NULL
+                    )",
+            )
+            .fetch_one(&self.pool)
+            .await?;
+            let thread_url_upgrade_needed = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(
+                    SELECT 1 FROM browser_inbox_ingestions
+                    WHERE platform = 'linkedin'
+                )
+                AND NOT EXISTS(
+                    SELECT 1 FROM browser_inbox_ingestions
+                    WHERE platform = 'linkedin'
+                      AND LOWER(remote_url) != 'https://www.linkedin.com/messaging/'
+                      AND LOWER(remote_url) NOT LIKE '%/undefined%'
+                )",
+            )
+            .fetch_one(&self.pool)
+            .await?;
+            profile_upgrade_needed || thread_url_upgrade_needed
+        } else {
+            false
+        };
+        Ok(if completed && !linkedin_upgrade_needed {
             BrowserInboxScanMode::Incremental
         } else {
             BrowserInboxScanMode::Initial
@@ -262,11 +290,12 @@ impl BrowserInboxService {
                 imported += 1;
                 conversation_id
             };
-            sqlx::query("INSERT INTO browser_inbox_ingestions (platform, remote_id, conversation_id, remote_url, first_seen_at, last_seen_at, last_scanned_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform, remote_id) DO UPDATE SET remote_url = excluded.remote_url, last_seen_at = excluded.last_seen_at, last_scanned_at = excluded.last_scanned_at")
+            sqlx::query("INSERT INTO browser_inbox_ingestions (platform, remote_id, conversation_id, remote_url, profile_url, first_seen_at, last_seen_at, last_scanned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform, remote_id) DO UPDATE SET remote_url = excluded.remote_url, profile_url = COALESCE(excluded.profile_url, browser_inbox_ingestions.profile_url), last_seen_at = excluded.last_seen_at, last_scanned_at = excluded.last_scanned_at")
                 .bind(platform.as_str())
                 .bind(&item.remote_id)
                 .bind(conversation_id)
                 .bind(&item.remote_url)
+                .bind(item.profile_url.as_deref())
                 .bind(&now_text)
                 .bind(&now_text)
                 .bind(&now_text)
@@ -355,11 +384,23 @@ async fn find_existing_ingestion(
         return Ok(exact);
     }
 
-    if platform == Platform::Linkedin && item.remote_url == target_url(Platform::Linkedin) {
+    if platform == Platform::Linkedin {
         return sqlx::query_as(
-            "SELECT b.conversation_id, b.remote_id FROM browser_inbox_ingestions b JOIN conversations c ON c.id = b.conversation_id WHERE b.platform = ? AND (LOWER(b.remote_url) LIKE '%/undefined%' OR LOWER(b.remote_id) GLOB 'ember[0-9]*') AND LOWER(c.notification_display_name) = LOWER(?) LIMIT 1",
+            "SELECT b.conversation_id, b.remote_id
+             FROM browser_inbox_ingestions b
+             JOIN conversations c ON c.id = b.conversation_id
+             WHERE b.platform = ?
+               AND (
+                 LOWER(b.remote_url) = LOWER(?)
+                 OR LOWER(b.remote_url) LIKE '%/undefined%'
+                 OR LOWER(b.remote_id) GLOB 'ember[0-9]*'
+                 OR LOWER(b.remote_id) LIKE 'fallback:linkedin:%'
+               )
+               AND LOWER(c.notification_display_name) = LOWER(?)
+             LIMIT 1",
         )
         .bind(platform.as_str())
+        .bind(target_url(Platform::Linkedin))
         .bind(&item.display_name)
         .fetch_optional(&mut **transaction)
         .await
@@ -581,6 +622,7 @@ mod tests {
                     preview: "Can we compare notes?".to_owned(),
                     unread: true,
                     remote_url: "https://x.com/messages/ari".to_owned(),
+                    profile_url: Some("https://x.com/ari".to_owned()),
                     timestamp: Some("6d".to_owned()),
                     direction: BrowserInboxDirection::Inbound,
                 },
@@ -590,6 +632,7 @@ mod tests {
                     preview: "You: Thanks!".to_owned(),
                     unread: false,
                     remote_url: "https://x.com/messages/mina".to_owned(),
+                    profile_url: None,
                     timestamp: Some("2w".to_owned()),
                     direction: BrowserInboxDirection::Outbound,
                 },
@@ -599,8 +642,10 @@ mod tests {
             .ingest(Platform::X, scan.clone())
             .await
             .expect("first scan");
+        let mut rescan = scan;
+        rescan.items[0].profile_url = None;
         let second = service
-            .ingest(Platform::X, scan)
+            .ingest(Platform::X, rescan)
             .await
             .expect("second scan");
         assert_eq!((first.imported, first.updated), (2, 0));
@@ -615,6 +660,13 @@ mod tests {
             conversations
                 .iter()
                 .all(|row| row.source == ConversationSource::BrowserScan)
+        );
+        assert_eq!(
+            conversations
+                .iter()
+                .find(|row| row.display_name == "Ari")
+                .and_then(|row| row.profile_url.as_deref()),
+            Some("https://x.com/ari")
         );
         assert!(
             PlatformRepository::new(database.pool().clone())
@@ -644,6 +696,7 @@ mod tests {
                         remote_url:
                             "https://www.linkedin.com/messaging/thread/2-mailbox/undefined/"
                                 .to_owned(),
+                        profile_url: None,
                         timestamp: None,
                         direction: BrowserInboxDirection::Inbound,
                     }],
@@ -660,11 +713,13 @@ mod tests {
                     mode: BrowserInboxScanMode::Initial,
                     stop: BrowserInboxScanStop::Exhausted,
                     items: vec![BrowserInboxItem {
-                        remote_id: "fallback:linkedin:ross mcintyre".to_owned(),
+                        remote_id: "messaging/thread/2-mailbox".to_owned(),
                         display_name: "Ross McIntyre".to_owned(),
                         preview: "A newer preview".to_owned(),
                         unread: true,
-                        remote_url: "https://www.linkedin.com/messaging/".to_owned(),
+                        remote_url: "https://www.linkedin.com/messaging/thread/2-mailbox/"
+                            .to_owned(),
+                        profile_url: Some("https://www.linkedin.com/in/ross-mcintyre/".to_owned()),
                         timestamp: None,
                         direction: BrowserInboxDirection::Inbound,
                     }],
@@ -691,9 +746,69 @@ mod tests {
         assert_eq!(
             stored,
             (
-                "fallback:linkedin:ross mcintyre".to_owned(),
-                "https://www.linkedin.com/messaging/".to_owned()
+                "messaging/thread/2-mailbox".to_owned(),
+                "https://www.linkedin.com/messaging/thread/2-mailbox/".to_owned()
             )
+        );
+        let conversation = RelationshipRepository::new(database.pool().clone())
+            .conversations()
+            .await
+            .expect("repaired conversation")
+            .remove(0);
+        assert_eq!(
+            conversation.remote_url.as_deref(),
+            Some("https://www.linkedin.com/messaging/thread/2-mailbox/")
+        );
+    }
+
+    #[tokio::test]
+    async fn linkedin_scan_stays_full_until_the_profile_upgrade_is_captured() {
+        let database = Database::in_memory().await.expect("database");
+        let service = BrowserInboxService::new(BrowserManager::default(), database.pool().clone());
+        service
+            .ingest(
+                Platform::Linkedin,
+                BrowserInboxPageScan {
+                    state: BrowserInboxPageState::Ready,
+                    mode: BrowserInboxScanMode::Initial,
+                    stop: BrowserInboxScanStop::Exhausted,
+                    items: vec![BrowserInboxItem {
+                        remote_id: "fallback:linkedin:vy nguyen".to_owned(),
+                        display_name: "Vy Nguyen".to_owned(),
+                        preview: "Status is reachable".to_owned(),
+                        unread: false,
+                        remote_url: "https://www.linkedin.com/messaging/".to_owned(),
+                        profile_url: None,
+                        timestamp: None,
+                        direction: BrowserInboxDirection::Inbound,
+                    }],
+                },
+            )
+            .await
+            .expect("legacy scan");
+
+        assert_eq!(
+            service
+                .scan_mode(Platform::Linkedin)
+                .await
+                .expect("scan mode"),
+            BrowserInboxScanMode::Initial
+        );
+        sqlx::query(
+            "UPDATE browser_inbox_ingestions
+             SET profile_url = 'https://www.linkedin.com/in/vy-nguyen/',
+                 remote_url = 'https://www.linkedin.com/messaging/thread/2-mailbox/'
+             WHERE platform = 'linkedin'",
+        )
+        .execute(database.pool())
+        .await
+        .expect("save profile");
+        assert_eq!(
+            service
+                .scan_mode(Platform::Linkedin)
+                .await
+                .expect("scan mode"),
+            BrowserInboxScanMode::Incremental
         );
     }
 
@@ -715,6 +830,7 @@ mod tests {
                         preview: "Can we compare notes?".to_owned(),
                         unread: true,
                         remote_url: "https://www.linkedin.com/messaging/thread/mina/".to_owned(),
+                        profile_url: None,
                         timestamp: None,
                         direction: BrowserInboxDirection::Inbound,
                     }],

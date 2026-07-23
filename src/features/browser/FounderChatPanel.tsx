@@ -26,6 +26,7 @@ import { parseEngagementSuggestion } from "@/features/browser/engagement-suggest
 import { HistoryImportPanel } from "@/features/browser/HistoryImportPanel"
 import { invokeOutput, invokeValidated, isTauriRuntime } from "@/lib/tauri"
 import {
+  codexChatCollectionSchema,
   codexChatEventSchema,
   codexChatStateSchema,
   codexChatTurnResultSchema,
@@ -33,10 +34,13 @@ import {
   founderChatOutputJsonSchema,
   founderChatResearchRequestSchema,
   founderChatTurnSchema,
+  interruptCodexChatInputSchema,
   runAgentTaskInputSchema,
+  selectCodexChatInputSchema,
   sendCodexChatInputSchema,
   type AgentProvider,
   type CodexChatEvent,
+  type CodexChatSummary,
   type EngagementSuggestion,
   type FounderChatResearchRequest,
   type FounderChatTurn,
@@ -81,6 +85,7 @@ type ChatSubmission = {
 }
 
 type CodexChatSubmission = {
+  threadId: string
   message: string
   displayMessage?: string
   tab: BrowserTab | null
@@ -94,6 +99,16 @@ type CodexToolActivity = {
 
 const AUTOMATIC_BROWSER_MAX_ITEMS = 25
 const AUTOMATIC_BROWSER_MAX_STEPS = 8
+const PREVIEW_CODEX_CHAT_ID = "preview-codex-chat"
+
+const previewCodexChat: CodexChatSummary = {
+  threadId: PREVIEW_CODEX_CHAT_ID,
+  title: "New chat",
+  preview: "",
+  createdAt: 0,
+  updatedAt: 0,
+  status: "idle",
+}
 
 const initialMessage: ChatMessage = {
   id: "founder-chat-welcome",
@@ -226,6 +241,8 @@ function browserToolLabel(tool: string) {
 export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: FounderChatPanelProps) {
   const bootstrap = useBootstrap()
   const [provider, setProvider] = useState<AgentProvider>("codex")
+  const [codexChats, setCodexChats] = useState<CodexChatSummary[]>([previewCodexChat])
+  const [activeChatId, setActiveChatId] = useState(PREVIEW_CODEX_CHAT_ID)
   const [messages, setMessages] = useState<ChatMessage[]>([initialMessage])
   const [composer, setComposer] = useState("")
   const [researchRequest, setResearchRequest] = useState<FounderChatResearchRequest | null>(null)
@@ -234,22 +251,53 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
   const [trace, setTrace] = useState<BrowserResearchTrace[]>([])
   const [findings, setFindings] = useState<StoredResearchFinding[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [streamingReply, setStreamingReply] = useState("")
+  const [streamingReplies, setStreamingReplies] = useState<Map<string, string>>(() => new Map())
   const [codexToolActivity, setCodexToolActivity] = useState<CodexToolActivity | null>(null)
   const [chatStateError, setChatStateError] = useState<Error | null>(null)
-  const chatInteractionStarted = useRef(false)
+  const [pendingThreadIds, setPendingThreadIds] = useState<Set<string>>(() => new Set())
+  const activeChatIdRef = useRef(PREVIEW_CODEX_CHAT_ID)
+  const pendingThreadIdsRef = useRef(new Set<string>())
+  const transcriptsRef = useRef(new Map<string, ChatMessage[]>())
 
   const agentStatuses = useMemo(
     () => new Map(bootstrap.data?.agents.map((status) => [status.provider, status])),
     [bootstrap.data?.agents],
   )
+  const activeCodexChat = codexChats.find((chat) => chat.threadId === activeChatId) ?? null
+  const streamingReply = streamingReplies.get(activeChatId) ?? ""
 
-  const hydrateCodexChat = useCallback(async (force = false) => {
+  const resetChatSurface = useCallback(() => {
+    setComposer("")
+    setCodexToolActivity(null)
+    setResearchRequest(null)
+    setResearchTab(null)
+    setProgress(null)
+    setTrace([])
+    setFindings([])
+  }, [])
+
+  const hydrateCodexChat = useCallback(async () => {
     if (!isTauriRuntime()) return
     try {
       const state = await invokeOutput("get_codex_chat_state", {}, codexChatStateSchema)
-      if (!force && chatInteractionStarted.current) return
+      if (state.threadId !== activeChatIdRef.current) return
+      transcriptsRef.current.set(state.threadId, state.messages)
       setMessages([initialMessage, ...state.messages])
+      setChatStateError(null)
+    } catch (error) {
+      setChatStateError(error instanceof Error ? error : new Error(String(error)))
+    }
+  }, [])
+
+  const refreshCodexChats = useCallback(async () => {
+    if (!isTauriRuntime()) return
+    try {
+      const collection = await invokeOutput("list_codex_chats", {}, codexChatCollectionSchema)
+      setCodexChats(
+        collection.chats.map((chat) =>
+          pendingThreadIdsRef.current.has(chat.threadId) ? { ...chat, status: "active" } : chat,
+        ),
+      )
       setChatStateError(null)
     } catch (error) {
       setChatStateError(error instanceof Error ? error : new Error(String(error)))
@@ -259,7 +307,26 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
   useEffect(() => {
     if (!isTauriRuntime()) return
     const hydrationTimer = window.setTimeout(() => {
-      void hydrateCodexChat()
+      void (async () => {
+        try {
+          const collection = await invokeOutput("list_codex_chats", {}, codexChatCollectionSchema)
+          activeChatIdRef.current = collection.activeThreadId
+          setActiveChatId(collection.activeThreadId)
+          setCodexChats(
+            collection.chats.map((chat) =>
+              pendingThreadIdsRef.current.has(chat.threadId) ? { ...chat, status: "active" } : chat,
+            ),
+          )
+          const state = await invokeOutput("get_codex_chat_state", {}, codexChatStateSchema)
+          if (state.threadId === collection.activeThreadId) {
+            transcriptsRef.current.set(state.threadId, state.messages)
+            setMessages([initialMessage, ...state.messages])
+          }
+          setChatStateError(null)
+        } catch (error) {
+          setChatStateError(error instanceof Error ? error : new Error(String(error)))
+        }
+      })()
     }, 0)
     const progressListener = listen<unknown>("browser://run-progress", (event) => {
       setProgress(browserRunProgressSchema.parse(event.payload))
@@ -278,9 +345,25 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
     })
     const codexChatListener = listen<unknown>("codex://chat-event", (event) => {
       const item: CodexChatEvent = codexChatEventSchema.parse(event.payload)
+      if (item.kind === "turn_started") {
+        setCodexChats((current) =>
+          current.map((chat) => (chat.threadId === item.threadId ? { ...chat, status: "active" } : chat)),
+        )
+      }
       if (item.kind === "assistant_delta" && item.delta) {
-        setStreamingReply((current) => current + item.delta)
-      } else if (item.kind === "tool_started" && item.tool) {
+        setStreamingReplies((current) => {
+          const next = new Map(current)
+          next.set(item.threadId, (next.get(item.threadId) ?? "") + item.delta)
+          return next
+        })
+      }
+      if (item.threadId !== activeChatIdRef.current) {
+        if (item.kind === "turn_completed" || item.kind === "state_changed") {
+          void refreshCodexChats()
+        }
+        return
+      }
+      if (item.kind === "tool_started" && item.tool) {
         setCodexToolActivity({ tool: item.tool, status: "running", message: null })
       } else if (item.kind === "tool_completed" && item.tool) {
         setCodexToolActivity({
@@ -289,7 +372,8 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
           message: item.message,
         })
       } else if (item.kind === "state_changed") {
-        if (!chatInteractionStarted.current) void hydrateCodexChat(true)
+        void refreshCodexChats()
+        if (!pendingThreadIdsRef.current.has(item.threadId)) void hydrateCodexChat()
       }
     })
     return () => {
@@ -299,7 +383,11 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
       void findingListener.then((dispose) => dispose())
       void codexChatListener.then((dispose) => dispose())
     }
-  }, [hydrateCodexChat])
+  }, [hydrateCodexChat, refreshCodexChats])
+
+  useEffect(() => {
+    transcriptsRef.current.set(activeChatId, messages.slice(1))
+  }, [activeChatId, messages])
 
   const loadResearchArtifacts = async (runId: string) => {
     if (!isTauriRuntime()) return
@@ -373,7 +461,7 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
   })
 
   const codexChat = useMutation({
-    mutationFn: async ({ message, tab }: CodexChatSubmission) => {
+    mutationFn: async ({ threadId, message, tab }: CodexChatSubmission) => {
       if (!isTauriRuntime()) {
         const browserRequest = inferBrowserResearchRequest(message)
         const wantsEngagement =
@@ -381,7 +469,7 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
             message,
           )
         return codexChatTurnResultSchema.parse({
-          threadId: crypto.randomUUID(),
+          threadId,
           turnId: crypto.randomUUID(),
           reply: browserRequest
             ? tab?.platform
@@ -393,6 +481,7 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
         })
       }
       const input = {
+        threadId,
         message,
         activeTabId: tab?.platform ? tab.id : null,
       }
@@ -403,11 +492,23 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
         codexChatTurnResultSchema,
       )
     },
-    onMutate: ({ message, displayMessage, tab }) => {
-      chatInteractionStarted.current = true
-      setMessages((current) => [...current, newMessage("user", displayMessage ?? message)])
+    onMutate: ({ threadId, message, displayMessage, tab }) => {
+      pendingThreadIdsRef.current.add(threadId)
+      setPendingThreadIds(new Set(pendingThreadIdsRef.current))
+      setCodexChats((current) =>
+        current.map((chat) => (chat.threadId === threadId ? { ...chat, status: "active" } : chat)),
+      )
+      setMessages((current) => {
+        const next = [...current, newMessage("user", displayMessage ?? message)]
+        transcriptsRef.current.set(threadId, next.slice(1))
+        return next
+      })
       setComposer("")
-      setStreamingReply("")
+      setStreamingReplies((current) => {
+        const next = new Map(current)
+        next.delete(threadId)
+        return next
+      })
       setCodexToolActivity(
         !isTauriRuntime() && inferBrowserResearchRequest(message) && tab?.platform
           ? { tool: "browser_observe", status: "running", message: null }
@@ -419,20 +520,63 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
       setTrace([])
       setFindings([])
     },
-    onSuccess: (result) => {
-      setMessages((current) => [...current, newMessage("assistant", result.reply)])
-      setStreamingReply("")
-      setCodexToolActivity((current) =>
-        current?.status === "running"
-          ? { ...current, status: "completed", message: current.message ?? "Browser action completed" }
-          : current,
-      )
+    onSuccess: (result, submission) => {
+      const transcript = [
+        ...(transcriptsRef.current.get(result.threadId) ?? []),
+        newMessage("assistant", result.reply),
+      ]
+      transcriptsRef.current.set(result.threadId, transcript)
+      if (result.threadId === activeChatIdRef.current) setMessages([initialMessage, ...transcript])
+      setStreamingReplies((current) => {
+        const next = new Map(current)
+        next.delete(result.threadId)
+        return next
+      })
+      if (result.threadId === activeChatIdRef.current) {
+        setCodexToolActivity((current) =>
+          current?.status === "running"
+            ? {
+                ...current,
+                status: "completed",
+                message: current.message ?? "Browser action completed",
+              }
+            : current,
+        )
+      }
+      if (!isTauriRuntime()) {
+        setCodexChats((current) =>
+          current.map((chat) =>
+            chat.threadId === result.threadId
+              ? {
+                  ...chat,
+                  title:
+                    chat.title === "New chat"
+                      ? (submission.displayMessage ?? submission.message).slice(0, 64)
+                      : chat.title,
+                  status: "idle",
+                  updatedAt: Date.now(),
+                }
+              : chat,
+          ),
+        )
+      }
     },
-    onError: (error) => {
-      setStreamingReply("")
-      setCodexToolActivity((current) =>
-        current?.status === "running" ? { ...current, status: "paused", message: error.message } : current,
-      )
+    onError: (error, submission) => {
+      if (submission.threadId === activeChatIdRef.current) {
+        setCodexToolActivity((current) =>
+          current?.status === "running" ? { ...current, status: "paused", message: error.message } : current,
+        )
+      }
+      setStreamingReplies((current) => {
+        const next = new Map(current)
+        next.delete(submission.threadId)
+        return next
+      })
+    },
+    onSettled: (_result, _error, submission) => {
+      pendingThreadIdsRef.current.delete(submission.threadId)
+      setPendingThreadIds(new Set(pendingThreadIdsRef.current))
+      if (isTauriRuntime()) void refreshCodexChats()
     },
   })
 
@@ -473,7 +617,6 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
       return result.output
     },
     onMutate: ({ message, displayMessage }) => {
-      chatInteractionStarted.current = true
       setMessages((current) => [...current, newMessage("user", displayMessage ?? message)])
       setComposer("")
     },
@@ -503,9 +646,35 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
   })
 
   const interruptCodexChat = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (threadId: string) => {
       if (!isTauriRuntime()) return true
-      return invokeOutput("interrupt_codex_chat", {}, z.boolean())
+      const input = { threadId }
+      return invokeValidated("interrupt_codex_chat", { input }, interruptCodexChatInputSchema, z.boolean())
+    },
+  })
+
+  const selectCodexChat = useMutation({
+    mutationFn: async (threadId: string) => {
+      if (!isTauriRuntime()) {
+        return codexChatStateSchema.parse({
+          threadId,
+          messages: transcriptsRef.current.get(threadId) ?? [],
+        })
+      }
+      const input = { threadId }
+      return invokeValidated("select_codex_chat", { input }, selectCodexChatInputSchema, codexChatStateSchema)
+    },
+    onSuccess: (state, threadId) => {
+      const selectedThreadId = state.threadId ?? threadId
+      const transcript =
+        pendingThreadIdsRef.current.has(selectedThreadId) && transcriptsRef.current.has(selectedThreadId)
+          ? (transcriptsRef.current.get(selectedThreadId) ?? [])
+          : state.messages
+      transcriptsRef.current.set(selectedThreadId, transcript)
+      activeChatIdRef.current = selectedThreadId
+      setActiveChatId(selectedThreadId)
+      setMessages([initialMessage, ...transcript])
+      resetChatSurface()
     },
   })
 
@@ -514,17 +683,25 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
       if (!isTauriRuntime()) return crypto.randomUUID()
       return invokeOutput("new_codex_chat", {}, z.string().min(1))
     },
-    onSuccess: () => {
-      chatInteractionStarted.current = false
+    onSuccess: (threadId) => {
+      activeChatIdRef.current = threadId
+      setActiveChatId(threadId)
+      transcriptsRef.current.set(threadId, [])
+      if (isTauriRuntime()) {
+        void refreshCodexChats()
+      } else {
+        setCodexChats((current) => [
+          {
+            ...previewCodexChat,
+            threadId,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+          ...current,
+        ])
+      }
       setMessages([initialMessage])
-      setComposer("")
-      setStreamingReply("")
-      setCodexToolActivity(null)
-      setResearchRequest(null)
-      setResearchTab(null)
-      setProgress(null)
-      setTrace([])
-      setFindings([])
+      resetChatSurface()
     },
   })
 
@@ -552,10 +729,12 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
 
   const submitMessage = (rawMessage: string) => {
     const message = rawMessage.trim()
-    if (!message || chat.isPending || codexChat.isPending || collect.isPending) return
+    const selectedCodexChatIsRunning =
+      pendingThreadIdsRef.current.has(activeChatId) || activeCodexChat?.status === "active"
+    if (!message || chat.isPending || selectedCodexChatIsRunning || collect.isPending) return
 
     if (provider === "codex") {
-      codexChat.mutate({ message, tab: activeTab })
+      codexChat.mutate({ threadId: activeChatId, message, tab: activeTab })
       return
     }
 
@@ -569,7 +748,6 @@ export function FounderChatPanel({ activeTab, onNavigate, onPrepareReply }: Foun
     const response = activeTab?.platform
       ? `I’ll use Browser Use on the open ${activeTab.platform.toUpperCase()} tab now and return a bounded, grounded result.`
       : "Browser Use needs an open X, LinkedIn, or Reddit tab."
-    chatInteractionStarted.current = true
     setMessages((current) => [
       ...current,
       newMessage("user", message),
@@ -604,6 +782,7 @@ ${suggestion.reply}
 
     if (provider === "codex") {
       codexChat.mutate({
+        threadId: activeChatId,
         message,
         displayMessage: "Rewrite the suggested reply",
         tab: activeTab,
@@ -624,10 +803,14 @@ ${suggestion.reply}
     chat.error ??
     collect.error ??
     interruptCodexChat.error ??
+    selectCodexChat.error ??
     newCodexChat.error ??
     review.error ??
     chatStateError
-  const chatPending = codexChat.isPending || chat.isPending
+  const anyCodexChatRunning =
+    pendingThreadIds.size > 0 || codexChats.some((chatItem) => chatItem.status === "active")
+  const selectedCodexChatRunning = pendingThreadIds.has(activeChatId) || activeCodexChat?.status === "active"
+  const chatPending = provider === "codex" ? selectedCodexChatRunning : chat.isPending
   const conversationStarted = messages.some((message) => message.role === "user")
 
   return (
@@ -638,8 +821,17 @@ ${suggestion.reply}
             <Bot size={15} />
           </span>
           <div>
-            <strong>Founder chat</strong>
-            <small>Local {provider} session</small>
+            <strong>
+              {provider === "codex" && activeCodexChat?.title !== "New chat"
+                ? activeCodexChat?.title
+                : "Founder chat"}
+            </strong>
+            <small>
+              Local {provider} session
+              {provider === "codex"
+                ? ` · ${codexChats.length} chat${codexChats.length === 1 ? "" : "s"}`
+                : ""}
+            </small>
           </div>
         </div>
         <div className="founder-chat-header-actions">
@@ -650,7 +842,7 @@ ${suggestion.reply}
               return (
                 <button
                   className={provider === candidate ? "active" : ""}
-                  disabled={unavailable || chatPending}
+                  disabled={unavailable || chat.isPending || anyCodexChatRunning}
                   key={candidate}
                   onClick={() => setProvider(candidate)}
                 >
@@ -663,13 +855,33 @@ ${suggestion.reply}
             className="chat-new-button"
             type="button"
             aria-label="New Codex chat"
-            disabled={chatPending || newCodexChat.isPending}
+            disabled={newCodexChat.isPending || selectCodexChat.isPending}
             onClick={() => newCodexChat.mutate()}
           >
             {newCodexChat.isPending ? <LoaderCircle size={13} /> : <Plus size={13} />}
           </button>
         </div>
       </header>
+
+      {provider === "codex" && (
+        <nav className="founder-chat-tabs" aria-label="Codex chats">
+          {codexChats.map((chatItem) => (
+            <button
+              type="button"
+              className={chatItem.threadId === activeChatId ? "active" : ""}
+              aria-pressed={chatItem.threadId === activeChatId}
+              disabled={selectCodexChat.isPending}
+              key={chatItem.threadId}
+              onClick={() => {
+                if (chatItem.threadId !== activeChatId) selectCodexChat.mutate(chatItem.threadId)
+              }}
+            >
+              <span className={`chat-tab-status ${chatItem.status}`} aria-hidden="true" />
+              <span>{chatItem.title}</span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="founder-chat-messages" aria-live="polite">
         {messages.map((message) => {
@@ -908,22 +1120,24 @@ ${suggestion.reply}
         />
         <Button
           size="icon"
-          type={codexChat.isPending ? "button" : "submit"}
-          aria-label={codexChat.isPending ? "Stop Codex response" : "Send message"}
+          type={provider === "codex" && selectedCodexChatRunning ? "button" : "submit"}
+          aria-label={
+            provider === "codex" && selectedCodexChatRunning ? "Stop Codex response" : "Send message"
+          }
           disabled={
-            codexChat.isPending
+            provider === "codex" && selectedCodexChatRunning
               ? interruptCodexChat.isPending
               : !composer.trim() || chat.isPending || collect.isPending
           }
           onClick={
-            codexChat.isPending
+            provider === "codex" && selectedCodexChatRunning
               ? () => {
-                  interruptCodexChat.mutate()
+                  interruptCodexChat.mutate(activeChatId)
                 }
               : undefined
           }
         >
-          {codexChat.isPending ? (
+          {selectedCodexChatRunning ? (
             <Square size={13} />
           ) : chat.isPending || collect.isPending ? (
             <LoaderCircle size={15} />
@@ -933,7 +1147,7 @@ ${suggestion.reply}
         </Button>
       </form>
       <p className="founder-chat-footnote">
-        <Sparkles size={11} /> Codex keeps this thread alive. Browser Use is bounded and read-only; typing,
+        <Sparkles size={11} /> Codex keeps every chat alive. Each one can use the open browser tab; typing,
         publishing, and sending always require you.
       </p>
     </section>

@@ -31,6 +31,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const TURN_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_REPLY_CHARS: usize = 40_000;
 const MAX_CHAT_TRANSCRIPT_MESSAGES: usize = 200;
+const MAX_CODEX_CHATS: usize = 100;
 const DEFAULT_FEED_SCAN_BATCHES: u32 = 4;
 const DEFAULT_FEED_SCAN_ITEMS: usize = 25;
 const MAX_FEED_SCAN_BATCHES: u32 = 8;
@@ -108,7 +109,7 @@ pub struct CodexChatTurnResult {
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexChatMessage {
-    pub id: Uuid,
+    pub id: String,
     pub role: CodexChatMessageRole,
     pub body: String,
 }
@@ -127,41 +128,31 @@ pub struct CodexChatState {
     pub messages: Vec<CodexChatMessage>,
 }
 
-#[derive(Debug, Default)]
-struct CodexChatTranscript {
-    thread_id: Option<String>,
-    messages: Vec<CodexChatMessage>,
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexChatStatus {
+    NotLoaded,
+    Idle,
+    Active,
+    SystemError,
 }
 
-impl CodexChatTranscript {
-    fn append_turn(&mut self, user: String, assistant: String) {
-        self.append(CodexChatMessageRole::User, user);
-        self.append(CodexChatMessageRole::Assistant, assistant);
-    }
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexChatSummary {
+    pub thread_id: String,
+    pub title: String,
+    pub preview: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub status: CodexChatStatus,
+}
 
-    fn append(&mut self, role: CodexChatMessageRole, body: String) {
-        self.messages.push(CodexChatMessage {
-            id: Uuid::new_v4(),
-            role,
-            body,
-        });
-        if self.messages.len() > MAX_CHAT_TRANSCRIPT_MESSAGES {
-            let overflow = self.messages.len() - MAX_CHAT_TRANSCRIPT_MESSAGES;
-            self.messages.drain(..overflow);
-        }
-    }
-
-    fn reset(&mut self, thread_id: String) {
-        self.thread_id = Some(thread_id);
-        self.messages.clear();
-    }
-
-    fn snapshot(&self) -> CodexChatState {
-        CodexChatState {
-            thread_id: self.thread_id.clone(),
-            messages: self.messages.clone(),
-        }
-    }
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexChatCollection {
+    pub active_thread_id: String,
+    pub chats: Vec<CodexChatSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -206,8 +197,7 @@ impl CodexChatEvent {
 pub struct CodexChatManager {
     connection: Arc<Mutex<Option<Arc<AppServerConnection>>>>,
     browser: BrowserManager,
-    transcript: Arc<RwLock<CodexChatTranscript>>,
-    turn_lock: Arc<Mutex<()>>,
+    active_thread_id: Arc<RwLock<Option<String>>>,
 }
 
 impl fmt::Debug for CodexChatManager {
@@ -223,32 +213,74 @@ impl CodexChatManager {
         Self {
             connection: Arc::new(Mutex::new(None)),
             browser,
-            transcript: Arc::new(RwLock::new(CodexChatTranscript::default())),
-            turn_lock: Arc::new(Mutex::new(())),
+            active_thread_id: Arc::new(RwLock::new(None)),
         }
     }
 
-    pub async fn current_state(&self) -> CodexChatState {
-        self.transcript.read().await.snapshot()
+    pub async fn list_chats(&self, app: &AppHandle) -> AppResult<CodexChatCollection> {
+        let connection = self.connection(app).await?;
+        let mut chats = connection.list_goalbar_threads().await?;
+        if chats.is_empty() {
+            let thread_id = connection.start_thread().await?;
+            chats.push(CodexChatSummary {
+                thread_id: thread_id.clone(),
+                title: "New chat".to_owned(),
+                preview: String::new(),
+                created_at: 0,
+                updated_at: 0,
+                status: CodexChatStatus::Idle,
+            });
+        }
+        let current = self.active_thread_id.read().await.clone();
+        let active_thread_id = current
+            .filter(|thread_id| chats.iter().any(|chat| chat.thread_id == *thread_id))
+            .unwrap_or_else(|| chats[0].thread_id.clone());
+        *self.active_thread_id.write().await = Some(active_thread_id.clone());
+        Ok(CodexChatCollection {
+            active_thread_id,
+            chats,
+        })
+    }
+
+    pub async fn current_state(&self, app: &AppHandle) -> AppResult<CodexChatState> {
+        let thread_id = self
+            .active_thread_id
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| AppError::NotFound("no active Goalbar chat".to_owned()))?;
+        self.connection(app)
+            .await?
+            .read_goalbar_thread(&thread_id)
+            .await
+    }
+
+    pub async fn select_thread(
+        &self,
+        app: &AppHandle,
+        thread_id: &str,
+    ) -> AppResult<CodexChatState> {
+        let state = self
+            .connection(app)
+            .await?
+            .read_goalbar_thread(thread_id)
+            .await?;
+        *self.active_thread_id.write().await = Some(thread_id.to_owned());
+        Ok(state)
     }
 
     pub async fn send_message(
         &self,
         app: &AppHandle,
+        thread_id: &str,
         message: &str,
         active_tab_id: Option<Uuid>,
     ) -> AppResult<CodexChatTurnResult> {
         let message = crate::validation::require_non_empty(message, "chat message", 20_000)?;
-        let _turn_guard = self.turn_lock.lock().await;
         let connection = self.connection(app).await?;
         let result = connection
-            .send_message(app, &message, active_tab_id)
+            .send_message(app, thread_id, &message, active_tab_id)
             .await?;
-        {
-            let mut transcript = self.transcript.write().await;
-            transcript.thread_id = Some(result.thread_id.clone());
-            transcript.append_turn(message, result.reply.clone());
-        }
         let _ = app.emit_to(
             "main",
             CHAT_EVENT,
@@ -257,32 +289,17 @@ impl CodexChatManager {
         Ok(result)
     }
 
-    pub async fn interrupt(&self) -> AppResult<bool> {
+    pub async fn interrupt(&self, thread_id: &str) -> AppResult<bool> {
         let connection = self.connection.lock().await.clone();
         let Some(connection) = connection else {
             return Ok(false);
         };
-        connection.interrupt().await
+        connection.interrupt(thread_id).await
     }
 
     pub async fn new_thread(&self, app: &AppHandle) -> AppResult<String> {
-        let _turn_guard = self.turn_lock.lock().await;
-        let mut guard = self.connection.lock().await;
-        if let Some(connection) = guard.as_ref().cloned() {
-            drop(guard);
-            let thread_id = connection.start_thread().await?;
-            self.transcript.write().await.reset(thread_id.clone());
-            let _ = app.emit_to(
-                "main",
-                CHAT_EVENT,
-                CodexChatEvent::state_changed(&thread_id, None),
-            );
-            return Ok(thread_id);
-        }
-        let connection = AppServerConnection::spawn(app.clone(), self.browser.clone()).await?;
-        let thread_id = connection.thread_id.read().await.clone();
-        *guard = Some(connection);
-        self.transcript.write().await.reset(thread_id.clone());
+        let thread_id = self.connection(app).await?.start_thread().await?;
+        *self.active_thread_id.write().await = Some(thread_id.clone());
         let _ = app.emit_to(
             "main",
             CHAT_EVENT,
@@ -309,11 +326,11 @@ struct AppServerConnection {
     turn_waiters: Arc<Mutex<HashMap<String, oneshot::Sender<AppResult<String>>>>>,
     completed_turns: Arc<Mutex<HashMap<String, AppResult<String>>>>,
     next_request_id: AtomicU64,
-    thread_id: RwLock<String>,
-    active_turn_id: Arc<RwLock<Option<String>>>,
-    tool_context: Arc<Mutex<Option<BrowserToolContext>>>,
-    turn_cancellation: Arc<Mutex<Option<CancellationToken>>>,
-    turn_lock: Mutex<()>,
+    active_turns: Arc<Mutex<ActiveCodexTurns>>,
+    loaded_thread_ids: Mutex<HashSet<String>>,
+    unmaterialized_thread_ids: Mutex<HashSet<String>>,
+    started_thread_ids: Mutex<Vec<String>>,
+    load_lock: Mutex<()>,
     browser: BrowserManager,
 }
 
@@ -324,15 +341,66 @@ struct BrowserToolContext {
     navigation_depth: u32,
 }
 
+#[derive(Default)]
+struct ActiveCodexTurns {
+    running_threads: HashSet<String>,
+    turn_ids: HashMap<String, String>,
+    tool_contexts: HashMap<String, BrowserToolContext>,
+    cancellations: HashMap<String, CancellationToken>,
+}
+
+impl ActiveCodexTurns {
+    fn reserve(&mut self, thread_id: &str, tool_context: Option<BrowserToolContext>) -> bool {
+        if !self.running_threads.insert(thread_id.to_owned()) {
+            return false;
+        }
+        if let Some(tool_context) = tool_context {
+            self.tool_contexts
+                .insert(thread_id.to_owned(), tool_context);
+        }
+        self.cancellations
+            .insert(thread_id.to_owned(), CancellationToken::new());
+        true
+    }
+
+    fn attach_turn(&mut self, thread_id: &str, turn_id: &str) {
+        self.turn_ids
+            .insert(thread_id.to_owned(), turn_id.to_owned());
+    }
+
+    fn turn_id(&self, thread_id: &str) -> Option<&str> {
+        self.turn_ids.get(thread_id).map(String::as_str)
+    }
+
+    fn cancellation(&self, thread_id: &str) -> Option<CancellationToken> {
+        self.cancellations.get(thread_id).cloned()
+    }
+
+    fn release(&mut self, thread_id: &str) {
+        self.running_threads.remove(thread_id);
+        self.turn_ids.remove(thread_id);
+        self.tool_contexts.remove(thread_id);
+        self.cancellations.remove(thread_id);
+    }
+
+    fn cancel_all(&mut self) {
+        for cancellation in self.cancellations.values() {
+            cancellation.cancel();
+        }
+        self.running_threads.clear();
+        self.turn_ids.clear();
+        self.tool_contexts.clear();
+        self.cancellations.clear();
+    }
+}
+
 struct ReaderContext {
     writer: Arc<Mutex<ChildStdin>>,
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<AppResult<Value>>>>>,
     turn_waiters: Arc<Mutex<HashMap<String, oneshot::Sender<AppResult<String>>>>>,
     completed_turns: Arc<Mutex<HashMap<String, AppResult<String>>>>,
     turn_outputs: Arc<Mutex<HashMap<String, String>>>,
-    active_turn_id: Arc<RwLock<Option<String>>>,
-    tool_context: Arc<Mutex<Option<BrowserToolContext>>>,
-    turn_cancellation: Arc<Mutex<Option<CancellationToken>>>,
+    active_turns: Arc<Mutex<ActiveCodexTurns>>,
     tool_call_lock: Arc<Mutex<()>>,
     app: AppHandle,
     browser: BrowserManager,
@@ -385,9 +453,7 @@ impl AppServerConnection {
         let turn_waiters = Arc::new(Mutex::new(HashMap::new()));
         let completed_turns = Arc::new(Mutex::new(HashMap::new()));
         let turn_outputs = Arc::new(Mutex::new(HashMap::new()));
-        let active_turn_id = Arc::new(RwLock::new(None));
-        let tool_context = Arc::new(Mutex::new(None));
-        let turn_cancellation = Arc::new(Mutex::new(None));
+        let active_turns = Arc::new(Mutex::new(ActiveCodexTurns::default()));
         let tool_call_lock = Arc::new(Mutex::new(()));
 
         let connection = Arc::new(Self {
@@ -397,11 +463,11 @@ impl AppServerConnection {
             turn_waiters: turn_waiters.clone(),
             completed_turns: completed_turns.clone(),
             next_request_id: AtomicU64::new(1),
-            thread_id: RwLock::new(String::new()),
-            active_turn_id: active_turn_id.clone(),
-            tool_context: tool_context.clone(),
-            turn_cancellation: turn_cancellation.clone(),
-            turn_lock: Mutex::new(()),
+            active_turns: active_turns.clone(),
+            loaded_thread_ids: Mutex::new(HashSet::new()),
+            unmaterialized_thread_ids: Mutex::new(HashSet::new()),
+            started_thread_ids: Mutex::new(Vec::new()),
+            load_lock: Mutex::new(()),
             browser: browser.clone(),
         });
 
@@ -411,9 +477,7 @@ impl AppServerConnection {
             turn_waiters,
             completed_turns,
             turn_outputs,
-            active_turn_id: active_turn_id.clone(),
-            tool_context,
-            turn_cancellation,
+            active_turns,
             tool_call_lock,
             app: app.clone(),
             browser,
@@ -438,18 +502,11 @@ impl AppServerConnection {
             )
             .await?;
         connection.notify("initialized", None).await?;
-        let thread_id = connection.start_thread().await?;
-        *connection.thread_id.write().await = thread_id;
 
         Ok(connection)
     }
 
     async fn start_thread(&self) -> AppResult<String> {
-        if self.active_turn_id.read().await.is_some() {
-            return Err(AppError::Agent(
-                "finish or stop the active chat turn before starting a new chat".to_owned(),
-            ));
-        }
         let cwd = std::env::current_dir().map_err(AppError::from)?;
         let result = self
             .request("thread/start", thread_start_params(&cwd))
@@ -461,30 +518,150 @@ impl AppServerConnection {
                 AppError::Agent("Codex app-server did not return a thread id".to_owned())
             })?
             .to_owned();
-        *self.thread_id.write().await = thread_id.clone();
-        *self.tool_context.lock().await = None;
-        *self.turn_cancellation.lock().await = None;
+        self.loaded_thread_ids
+            .lock()
+            .await
+            .insert(thread_id.clone());
+        self.unmaterialized_thread_ids
+            .lock()
+            .await
+            .insert(thread_id.clone());
+        self.started_thread_ids.lock().await.push(thread_id.clone());
         Ok(thread_id)
+    }
+
+    async fn list_goalbar_threads(&self) -> AppResult<Vec<CodexChatSummary>> {
+        let result = self
+            .request(
+                "thread/list",
+                json!({
+                    "limit": MAX_CODEX_CHATS,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc",
+                    "sourceKinds": ["appServer"]
+                }),
+            )
+            .await?;
+        let threads = result
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                AppError::Agent("Codex app-server returned an invalid chat list".to_owned())
+            })?;
+        let goalbar_threads = threads
+            .iter()
+            .filter(|thread| thread.get("threadSource").and_then(Value::as_str) == Some("goalbar"))
+            .collect::<Vec<_>>();
+        let started_thread_ids = {
+            let mut started = self.started_thread_ids.lock().await;
+            for thread in &goalbar_threads {
+                if !thread_is_unmaterialized(thread)
+                    && let Some(thread_id) = thread.get("id").and_then(Value::as_str)
+                {
+                    started.retain(|started_id| started_id != thread_id);
+                }
+            }
+            started.clone()
+        };
+        let persisted_chats = goalbar_threads
+            .into_iter()
+            .map(codex_chat_summary)
+            .collect::<AppResult<Vec<_>>>()?;
+        Ok(merge_started_chat_placeholders(
+            persisted_chats,
+            &started_thread_ids,
+        ))
+    }
+
+    async fn read_goalbar_thread(&self, thread_id: &str) -> AppResult<CodexChatState> {
+        let (params, include_turns) = {
+            let unmaterialized = self.unmaterialized_thread_ids.lock().await;
+            (
+                thread_read_params(thread_id, &unmaterialized),
+                !unmaterialized.contains(thread_id),
+            )
+        };
+        let result = match self.request("thread/read", params).await {
+            Ok(result) => result,
+            Err(error) if include_turns && is_unmaterialized_thread_read_error(&error) => {
+                let params = {
+                    let mut unmaterialized = self.unmaterialized_thread_ids.lock().await;
+                    unmaterialized.insert(thread_id.to_owned());
+                    thread_read_params(thread_id, &unmaterialized)
+                };
+                self.request("thread/read", params).await?
+            }
+            Err(error) => return Err(error),
+        };
+        let thread = result.get("thread").ok_or_else(|| {
+            AppError::Agent("Codex app-server returned an invalid chat".to_owned())
+        })?;
+        ensure_goalbar_thread(thread, thread_id)?;
+        codex_chat_state(thread)
+    }
+
+    async fn ensure_thread_loaded(&self, thread_id: &str) -> AppResult<()> {
+        let _load_guard = self.load_lock.lock().await;
+        if self.loaded_thread_ids.lock().await.contains(thread_id) {
+            return Ok(());
+        }
+        self.read_goalbar_thread(thread_id).await?;
+
+        let cwd = std::env::current_dir().map_err(AppError::from)?;
+        let result = self
+            .request(
+                "thread/resume",
+                json!({
+                    "threadId": thread_id,
+                    "cwd": cwd.to_string_lossy(),
+                    "runtimeWorkspaceRoots": [cwd],
+                    "approvalPolicy": "never",
+                    "sandbox": "read-only",
+                    "baseInstructions": GOALBAR_BASE_INSTRUCTIONS,
+                    "developerInstructions": GOALBAR_CHAT_INSTRUCTIONS,
+                    "excludeTurns": true
+                }),
+            )
+            .await?;
+        let resumed_thread_id = result
+            .pointer("/thread/id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AppError::Agent("Codex app-server did not resume the requested chat".to_owned())
+            })?;
+        if resumed_thread_id != thread_id {
+            return Err(AppError::Agent(
+                "Codex app-server resumed a different chat".to_owned(),
+            ));
+        }
+        self.loaded_thread_ids
+            .lock()
+            .await
+            .insert(thread_id.to_owned());
+        Ok(())
     }
 
     async fn send_message(
         &self,
         app: &AppHandle,
+        thread_id: &str,
         message: &str,
         active_tab_id: Option<Uuid>,
     ) -> AppResult<CodexChatTurnResult> {
-        let _turn_guard = self.turn_lock.lock().await;
-        let thread_id = self.thread_id.read().await.clone();
-        if thread_id.is_empty() {
+        self.ensure_thread_loaded(thread_id).await?;
+        let tool_context = browser_context(&self.browser, active_tab_id)?;
+        let application_context = browser_application_context(tool_context.as_ref(), message);
+        if !self
+            .active_turns
+            .lock()
+            .await
+            .reserve(thread_id, tool_context)
+        {
             return Err(AppError::Agent(
-                "Codex chat thread is not initialized".to_owned(),
+                "this Goalbar chat already has a running turn".to_owned(),
             ));
         }
         let outcome = async {
-            let tool_context = browser_context(&self.browser, active_tab_id)?;
-            let application_context = browser_application_context(tool_context.as_ref(), message);
-            *self.tool_context.lock().await = tool_context;
-            *self.turn_cancellation.lock().await = Some(CancellationToken::new());
             let result = self
                 .request(
                     "turn/start",
@@ -505,6 +682,10 @@ impl AppServerConnection {
                     }),
                 )
                 .await?;
+            self.unmaterialized_thread_ids
+                .lock()
+                .await
+                .remove(thread_id);
             let turn_id = result
                 .pointer("/turn/id")
                 .and_then(Value::as_str)
@@ -512,7 +693,20 @@ impl AppServerConnection {
                     AppError::Agent("Codex app-server did not return a turn id".to_owned())
                 })?
                 .to_owned();
-            *self.active_turn_id.write().await = Some(turn_id.clone());
+            let cancelled_before_start = {
+                let mut active_turns = self.active_turns.lock().await;
+                active_turns.attach_turn(thread_id, &turn_id);
+                active_turns
+                    .cancellation(thread_id)
+                    .is_some_and(|cancellation| cancellation.is_cancelled())
+            };
+            if cancelled_before_start {
+                self.request(
+                    "turn/interrupt",
+                    json!({"threadId": thread_id, "turnId": turn_id}),
+                )
+                .await?;
+            }
             let (sender, receiver) = oneshot::channel();
             if let Some(completed) = self.completed_turns.lock().await.remove(&turn_id) {
                 let _ = sender.send(completed);
@@ -530,7 +724,7 @@ impl AppServerConnection {
                     ));
                 }
                 Err(_) => {
-                    let _ = self.interrupt().await;
+                    let _ = self.interrupt(thread_id).await;
                     self.turn_waiters.lock().await.remove(&turn_id);
                     return Err(AppError::Timeout(
                         "Codex chat exceeded 300 seconds".to_owned(),
@@ -541,30 +735,35 @@ impl AppServerConnection {
             Ok((turn_id, reply))
         }
         .await;
-        *self.active_turn_id.write().await = None;
-        *self.tool_context.lock().await = None;
-        *self.turn_cancellation.lock().await = None;
+        self.active_turns.lock().await.release(thread_id);
         let (turn_id, reply) = outcome?;
         let _ = app.emit_to(
             "main",
             CHAT_EVENT,
-            CodexChatEvent::turn("turn_completed", &thread_id, &turn_id),
+            CodexChatEvent::turn("turn_completed", thread_id, &turn_id),
         );
         Ok(CodexChatTurnResult {
-            thread_id,
+            thread_id: thread_id.to_owned(),
             turn_id,
             reply,
         })
     }
 
-    async fn interrupt(&self) -> AppResult<bool> {
-        let Some(turn_id) = self.active_turn_id.read().await.clone() else {
+    async fn interrupt(&self, thread_id: &str) -> AppResult<bool> {
+        let (turn_id, cancellation) = {
+            let active_turns = self.active_turns.lock().await;
+            (
+                active_turns.turn_id(thread_id).map(str::to_owned),
+                active_turns.cancellation(thread_id),
+            )
+        };
+        let Some(cancellation) = cancellation else {
             return Ok(false);
         };
-        if let Some(cancellation) = self.turn_cancellation.lock().await.as_ref() {
-            cancellation.cancel();
-        }
-        let thread_id = self.thread_id.read().await.clone();
+        cancellation.cancel();
+        let Some(turn_id) = turn_id else {
+            return Ok(true);
+        };
         self.request(
             "turn/interrupt",
             json!({"threadId": thread_id, "turnId": turn_id}),
@@ -618,6 +817,195 @@ impl Drop for AppServerConnection {
     }
 }
 
+fn ensure_goalbar_thread(thread: &Value, expected_id: &str) -> AppResult<()> {
+    let thread_id = thread.get("id").and_then(Value::as_str).ok_or_else(|| {
+        AppError::Agent("Codex app-server returned a chat without an id".to_owned())
+    })?;
+    if thread_id != expected_id
+        || thread.get("threadSource").and_then(Value::as_str) != Some("goalbar")
+    {
+        return Err(AppError::NotFound(format!("Goalbar chat {expected_id}")));
+    }
+    Ok(())
+}
+
+fn codex_chat_summary(thread: &Value) -> AppResult<CodexChatSummary> {
+    let thread_id = thread
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::Agent("Codex chat summary is missing an id".to_owned()))?
+        .to_owned();
+    let preview = thread
+        .get("preview")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let title = thread
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| preview.lines().next().unwrap_or_default())
+        .trim();
+    let title = if title.is_empty() {
+        "New chat".to_owned()
+    } else {
+        title.chars().take(64).collect()
+    };
+    let status = match thread
+        .pointer("/status/type")
+        .and_then(Value::as_str)
+        .unwrap_or("notLoaded")
+    {
+        "idle" => CodexChatStatus::Idle,
+        "active" => CodexChatStatus::Active,
+        "systemError" => CodexChatStatus::SystemError,
+        _ => CodexChatStatus::NotLoaded,
+    };
+    Ok(CodexChatSummary {
+        thread_id,
+        title,
+        preview,
+        created_at: thread
+            .get("createdAt")
+            .and_then(Value::as_i64)
+            .unwrap_or_default(),
+        updated_at: thread
+            .get("updatedAt")
+            .and_then(Value::as_i64)
+            .unwrap_or_default(),
+        status,
+    })
+}
+
+fn codex_chat_state(thread: &Value) -> AppResult<CodexChatState> {
+    let thread_id = thread
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::Agent("Codex chat is missing an id".to_owned()))?
+        .to_owned();
+    let turns = thread
+        .get("turns")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::Agent("Codex chat is missing its transcript".to_owned()))?;
+    let mut messages = Vec::new();
+    for turn in turns {
+        let Some(items) = turn.get("items").and_then(Value::as_array) else {
+            continue;
+        };
+        let mut assistant_message = None;
+        for item in items {
+            let item_id = item
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            match item.get("type").and_then(Value::as_str) {
+                Some("userMessage") => {
+                    let body = item
+                        .get("content")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter(|content| {
+                            content.get("type").and_then(Value::as_str) == Some("text")
+                        })
+                        .filter_map(|content| content.get("text").and_then(Value::as_str))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !body.trim().is_empty() {
+                        messages.push(CodexChatMessage {
+                            id: item_id,
+                            role: CodexChatMessageRole::User,
+                            body,
+                        });
+                    }
+                }
+                Some("agentMessage") => {
+                    let body = item
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned();
+                    if !body.trim().is_empty() {
+                        assistant_message = Some(CodexChatMessage {
+                            id: item_id,
+                            role: CodexChatMessageRole::Assistant,
+                            body,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(message) = assistant_message {
+            messages.push(message);
+        }
+    }
+    if messages.len() > MAX_CHAT_TRANSCRIPT_MESSAGES {
+        let overflow = messages.len() - MAX_CHAT_TRANSCRIPT_MESSAGES;
+        messages.drain(..overflow);
+    }
+    Ok(CodexChatState {
+        thread_id: Some(thread_id),
+        messages,
+    })
+}
+
+fn thread_read_params(thread_id: &str, unmaterialized_thread_ids: &HashSet<String>) -> Value {
+    json!({
+        "threadId": thread_id,
+        "includeTurns": !unmaterialized_thread_ids.contains(thread_id)
+    })
+}
+
+fn is_unmaterialized_thread_read_error(error: &AppError) -> bool {
+    matches!(
+        error,
+        AppError::Agent(message)
+            if message.contains("not materialized") && message.contains("includeTurns")
+    )
+}
+
+fn thread_is_unmaterialized(thread: &Value) -> bool {
+    let has_materialized_path = thread
+        .get("path")
+        .and_then(Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty());
+    let has_preview = thread
+        .get("preview")
+        .and_then(Value::as_str)
+        .is_some_and(|preview| !preview.trim().is_empty());
+    let is_active = thread.pointer("/status/type").and_then(Value::as_str) == Some("active");
+    !has_materialized_path && !has_preview && !is_active
+}
+
+fn merge_started_chat_placeholders(
+    persisted_chats: Vec<CodexChatSummary>,
+    started_thread_ids: &[String],
+) -> Vec<CodexChatSummary> {
+    let persisted_ids = persisted_chats
+        .iter()
+        .map(|chat| chat.thread_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut chats = started_thread_ids
+        .iter()
+        .rev()
+        .filter(|thread_id| !persisted_ids.contains(thread_id.as_str()))
+        .map(|thread_id| CodexChatSummary {
+            thread_id: thread_id.clone(),
+            title: "New chat".to_owned(),
+            preview: String::new(),
+            created_at: 0,
+            updated_at: 0,
+            status: CodexChatStatus::Idle,
+        })
+        .collect::<Vec<_>>();
+    chats.extend(persisted_chats);
+    chats.truncate(MAX_CODEX_CHATS);
+    chats
+}
+
 fn thread_start_params(cwd: &std::path::Path) -> Value {
     json!({
         "cwd": cwd.to_string_lossy(),
@@ -628,6 +1016,8 @@ fn thread_start_params(cwd: &std::path::Path) -> Value {
         "environments": [],
         "baseInstructions": GOALBAR_BASE_INSTRUCTIONS,
         "developerInstructions": GOALBAR_CHAT_INSTRUCTIONS,
+        "serviceName": "Goalbar",
+        "threadSource": "goalbar",
         "dynamicTools": browser_tool_specs()
     })
 }
@@ -867,9 +1257,7 @@ impl Clone for ReaderContext {
             turn_waiters: self.turn_waiters.clone(),
             completed_turns: self.completed_turns.clone(),
             turn_outputs: self.turn_outputs.clone(),
-            active_turn_id: self.active_turn_id.clone(),
-            tool_context: self.tool_context.clone(),
-            turn_cancellation: self.turn_cancellation.clone(),
+            active_turns: self.active_turns.clone(),
             tool_call_lock: self.tool_call_lock.clone(),
             app: self.app.clone(),
             browser: self.browser.clone(),
@@ -916,7 +1304,6 @@ async fn handle_notification(message: Value, context: &ReaderContext) {
         .and_then(Value::as_str)
         .or_else(|| params.pointer("/turn/id").and_then(Value::as_str))
         .unwrap_or_default();
-
     match method {
         "item/agentMessage/delta" => {
             if let Some(delta) = params.get("delta").and_then(Value::as_str) {
@@ -956,7 +1343,11 @@ async fn handle_notification(message: Value, context: &ReaderContext) {
             }
         }
         "turn/started" => {
-            *context.active_turn_id.write().await = Some(turn_id.to_owned());
+            context
+                .active_turns
+                .lock()
+                .await
+                .attach_turn(thread_id, turn_id);
             let _ = context.app.emit_to(
                 "main",
                 CHAT_EVENT,
@@ -984,7 +1375,6 @@ async fn handle_notification(message: Value, context: &ReaderContext) {
                 Err(AppError::Agent(message.to_owned()))
             };
             finish_turn(context, turn_id, result).await;
-            *context.active_turn_id.write().await = None;
         }
         "error"
             if !params
@@ -1067,7 +1457,7 @@ async fn respond_to_server_request(message: Value, context: ReaderContext) {
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let result = execute_browser_tool(tool, arguments, &context).await;
+    let result = execute_browser_tool(tool, arguments, thread_id, &context).await;
     let (success, text, activity_message) = match result {
         Ok(value) => (
             true,
@@ -1108,15 +1498,17 @@ async fn respond_to_server_request(message: Value, context: ReaderContext) {
 async fn execute_browser_tool(
     tool: &str,
     arguments: Value,
+    thread_id: &str,
     context: &ReaderContext,
 ) -> AppResult<Value> {
     match tool {
         "browser_observe" => {
             let tab_id = context
-                .tool_context
+                .active_turns
                 .lock()
                 .await
-                .as_ref()
+                .tool_contexts
+                .get(thread_id)
                 .map(|value| value.tab_id)
                 .ok_or_else(|| {
                     AppError::Unsupported(
@@ -1133,7 +1525,13 @@ async fn execute_browser_tool(
                     "complete login or verification in the visible browser first".to_owned(),
                 ));
             }
-            if let Some(tool_context) = context.tool_context.lock().await.as_mut() {
+            if let Some(tool_context) = context
+                .active_turns
+                .lock()
+                .await
+                .tool_contexts
+                .get_mut(thread_id)
+            {
                 tool_context.last_observation = Some(observation.clone());
             }
             Ok(serde_json::to_value(observation)?)
@@ -1145,8 +1543,8 @@ async fn execute_browser_tool(
                 .ok_or_else(|| {
                     AppError::Validation("browser_scroll requires integer deltaY".to_owned())
                 })?;
-            let mut guard = context.tool_context.lock().await;
-            let tool_context = guard.as_mut().ok_or_else(|| {
+            let mut guard = context.active_turns.lock().await;
+            let tool_context = guard.tool_contexts.get_mut(thread_id).ok_or_else(|| {
                 AppError::Unsupported("no supported browser tab is bound to this turn".to_owned())
             })?;
             let observation = tool_context.last_observation.as_ref().ok_or_else(|| {
@@ -1172,14 +1570,14 @@ async fn execute_browser_tool(
             tokio::time::sleep(Duration::from_millis(500)).await;
             Ok(json!({"scrolledBy": delta, "next": "call browser_observe"}))
         }
-        "browser_scan_feed" => scan_feed(arguments, context).await,
+        "browser_scan_feed" => scan_feed(arguments, thread_id, context).await,
         "browser_open_link" => {
             let requested = arguments
                 .get("url")
                 .and_then(Value::as_str)
                 .ok_or_else(|| AppError::Validation("browser_open_link requires url".to_owned()))?;
-            let mut guard = context.tool_context.lock().await;
-            let tool_context = guard.as_mut().ok_or_else(|| {
+            let mut guard = context.active_turns.lock().await;
+            let tool_context = guard.tool_contexts.get_mut(thread_id).ok_or_else(|| {
                 AppError::Unsupported("no supported browser tab is bound to this turn".to_owned())
             })?;
             let observation = tool_context.last_observation.as_ref().ok_or_else(|| {
@@ -1196,8 +1594,8 @@ async fn execute_browser_tool(
             Ok(json!({"opened": target, "next": "call browser_observe"}))
         }
         "browser_go_back" => {
-            let mut guard = context.tool_context.lock().await;
-            let tool_context = guard.as_mut().ok_or_else(|| {
+            let mut guard = context.active_turns.lock().await;
+            let tool_context = guard.tool_contexts.get_mut(thread_id).ok_or_else(|| {
                 AppError::Unsupported("no supported browser tab is bound to this turn".to_owned())
             })?;
             if tool_context.navigation_depth == 0 {
@@ -1220,7 +1618,7 @@ async fn execute_browser_tool(
     }
 }
 
-async fn scan_feed(arguments: Value, context: &ReaderContext) -> AppResult<Value> {
+async fn scan_feed(arguments: Value, thread_id: &str, context: &ReaderContext) -> AppResult<Value> {
     let maximum_items = bounded_integer_argument(
         &arguments,
         "maximumItems",
@@ -1234,16 +1632,17 @@ async fn scan_feed(arguments: Value, context: &ReaderContext) -> AppResult<Value
         MAX_FEED_SCAN_BATCHES,
     )?;
     let (tab_id, expected_platform) = context
-        .tool_context
+        .active_turns
         .lock()
         .await
-        .as_ref()
+        .tool_contexts
+        .get(thread_id)
         .map(|value| (value.tab_id, value.platform))
         .ok_or_else(|| {
             AppError::Unsupported("no supported browser tab is bound to this turn".to_owned())
         })?;
     let start_url = context.browser.tab(tab_id)?.current_url;
-    let cancellation = context.turn_cancellation.lock().await.clone();
+    let cancellation = context.active_turns.lock().await.cancellation(thread_id);
     let mut posts = Vec::new();
     let mut identities = HashSet::new();
     let mut remaining_chars = MAX_FEED_SCAN_TOTAL_CHARS;
@@ -1324,7 +1723,12 @@ async fn scan_feed(arguments: Value, context: &ReaderContext) -> AppResult<Value
     }
 
     if let Some(observation) = last_observation
-        && let Some(tool_context) = context.tool_context.lock().await.as_mut()
+        && let Some(tool_context) = context
+            .active_turns
+            .lock()
+            .await
+            .tool_contexts
+            .get_mut(thread_id)
     {
         tool_context.last_observation = Some(observation);
     }
@@ -1508,9 +1912,7 @@ fn append_bounded(current: &mut String, delta: &str, maximum: usize) -> String {
 }
 
 async fn fail_pending(context: &ReaderContext, message: &str) {
-    if let Some(cancellation) = context.turn_cancellation.lock().await.as_ref() {
-        cancellation.cancel();
-    }
+    context.active_turns.lock().await.cancel_all();
     for (_, sender) in context.pending.lock().await.drain() {
         let _ = sender.send(Err(AppError::Agent(message.to_owned())));
     }
@@ -1527,47 +1929,161 @@ mod tests {
     use crate::domain::browser::{
         BrowserObservation, BrowserObservationBlock, BrowserPageKind, BrowserViewport,
     };
+    use crate::error::AppError;
 
     use super::{
-        BrowserTurnRoute, CodexChatMessageRole, CodexChatTranscript, MAX_CHAT_TRANSCRIPT_MESSAGES,
-        append_bounded, append_unique_feed_posts, bounded_integer_argument, browser_tool_specs,
-        browser_turn_route, feed_scan_scroll_delta, observed_link, request_id_key,
-        thread_start_params,
+        ActiveCodexTurns, BrowserTurnRoute, CodexChatMessageRole, CodexChatStatus,
+        CodexChatSummary, append_bounded, append_unique_feed_posts, bounded_integer_argument,
+        browser_tool_specs, browser_turn_route, codex_chat_state, codex_chat_summary,
+        feed_scan_scroll_delta, is_unmaterialized_thread_read_error,
+        merge_started_chat_placeholders, observed_link, request_id_key, thread_is_unmaterialized,
+        thread_read_params, thread_start_params,
     };
 
     #[test]
-    fn chat_transcript_survives_view_remounts_and_resets_for_a_new_thread() {
-        let mut transcript = CodexChatTranscript::default();
-        transcript.reset("thread-one".to_owned());
-        transcript.append_turn(
-            "Who is my ICP?".to_owned(),
-            "Let us test a focused founder segment.".to_owned(),
-        );
+    fn persisted_codex_turns_restore_as_a_goalbar_chat_transcript() {
+        let thread = serde_json::json!({
+            "id": "thread-one",
+            "threadSource": "goalbar",
+            "turns": [{
+                "items": [
+                    {
+                        "id": "user-one",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "Who is my ICP?"}]
+                    },
+                    {
+                        "id": "assistant-one",
+                        "type": "agentMessage",
+                        "text": "Let us test a focused founder segment."
+                    }
+                ]
+            }]
+        });
 
-        let snapshot = transcript.snapshot();
+        let snapshot = codex_chat_state(&thread).expect("chat state");
         assert_eq!(snapshot.thread_id.as_deref(), Some("thread-one"));
         assert_eq!(snapshot.messages.len(), 2);
         assert_eq!(snapshot.messages[0].role, CodexChatMessageRole::User);
         assert_eq!(snapshot.messages[1].role, CodexChatMessageRole::Assistant);
-
-        transcript.reset("thread-two".to_owned());
-        assert_eq!(
-            transcript.snapshot().thread_id.as_deref(),
-            Some("thread-two")
-        );
-        assert!(transcript.snapshot().messages.is_empty());
+        assert_eq!(snapshot.messages[0].body, "Who is my ICP?");
     }
 
     #[test]
-    fn chat_transcript_is_bounded() {
-        let mut transcript = CodexChatTranscript::default();
-        for index in 0..=MAX_CHAT_TRANSCRIPT_MESSAGES {
-            transcript.append(CodexChatMessageRole::User, format!("message-{index}"));
-        }
+    fn goalbar_chat_summary_uses_the_preview_and_runtime_status() {
+        let summary = codex_chat_summary(&serde_json::json!({
+            "id": "thread-one",
+            "preview": "Research my ICP\nwith browser evidence",
+            "name": null,
+            "createdAt": 10,
+            "updatedAt": 20,
+            "status": {"type": "active"},
+            "threadSource": "goalbar"
+        }))
+        .expect("chat summary");
 
-        let snapshot = transcript.snapshot();
-        assert_eq!(snapshot.messages.len(), MAX_CHAT_TRANSCRIPT_MESSAGES);
-        assert_eq!(snapshot.messages[0].body, "message-1");
+        assert_eq!(summary.title, "Research my ICP");
+        assert_eq!(summary.status, CodexChatStatus::Active);
+        assert_eq!(summary.updated_at, 20);
+    }
+
+    #[test]
+    fn unmaterialized_chat_is_read_without_turns() {
+        let unmaterialized = HashSet::from(["new-thread".to_owned()]);
+
+        assert_eq!(
+            thread_read_params("new-thread", &unmaterialized),
+            serde_json::json!({
+                "threadId": "new-thread",
+                "includeTurns": false
+            })
+        );
+        assert_eq!(
+            thread_read_params("saved-thread", &unmaterialized),
+            serde_json::json!({
+                "threadId": "saved-thread",
+                "includeTurns": true
+            })
+        );
+    }
+
+    #[test]
+    fn locally_started_chats_remain_switchable_until_the_persisted_index_catches_up() {
+        let persisted = vec![CodexChatSummary {
+            thread_id: "saved-thread".to_owned(),
+            title: "Saved chat".to_owned(),
+            preview: "Saved message".to_owned(),
+            created_at: 10,
+            updated_at: 20,
+            status: CodexChatStatus::Idle,
+        }];
+        let started = vec!["saved-thread".to_owned(), "new-thread".to_owned()];
+
+        let chats = merge_started_chat_placeholders(persisted, &started);
+
+        assert_eq!(
+            chats
+                .iter()
+                .map(|chat| chat.thread_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["new-thread", "saved-thread"]
+        );
+        assert_eq!(chats[0].title, "New chat");
+        assert_eq!(chats[1].title, "Saved chat");
+    }
+
+    #[test]
+    fn persisted_chat_without_an_exposed_path_still_restores_its_turns() {
+        assert!(!thread_is_unmaterialized(&serde_json::json!({
+            "id": "saved-thread",
+            "path": null,
+            "preview": "My saved first message",
+            "status": {"type": "idle"}
+        })));
+        assert!(thread_is_unmaterialized(&serde_json::json!({
+            "id": "new-thread",
+            "path": null,
+            "preview": "",
+            "status": {"type": "idle"}
+        })));
+    }
+
+    #[test]
+    fn only_the_codex_unmaterialized_error_retries_without_turns() {
+        assert!(is_unmaterialized_thread_read_error(&AppError::Agent(
+            "thread new-thread is not materialized yet; includeTurns is unavailable before first user message"
+                .to_owned()
+        )));
+        assert!(!is_unmaterialized_thread_read_error(&AppError::Agent(
+            "Codex login expired".to_owned()
+        )));
+    }
+
+    #[test]
+    fn different_codex_threads_can_run_concurrently_but_each_thread_has_one_turn() {
+        let mut turns = ActiveCodexTurns::default();
+
+        assert!(turns.reserve("thread-one", None));
+        assert!(turns.reserve("thread-two", None));
+        assert!(!turns.reserve("thread-one", None));
+
+        turns.attach_turn("thread-one", "turn-one");
+        turns.attach_turn("thread-two", "turn-two");
+        assert_eq!(turns.turn_id("thread-one"), Some("turn-one"));
+        assert_eq!(turns.turn_id("thread-two"), Some("turn-two"));
+        let first_cancellation = turns
+            .cancellation("thread-one")
+            .expect("first cancellation");
+        let second_cancellation = turns
+            .cancellation("thread-two")
+            .expect("second cancellation");
+        first_cancellation.cancel();
+        assert!(first_cancellation.is_cancelled());
+        assert!(!second_cancellation.is_cancelled());
+
+        turns.release("thread-one");
+        assert!(turns.reserve("thread-one", None));
+        assert_eq!(turns.turn_id("thread-two"), Some("turn-two"));
     }
 
     #[test]
@@ -1762,6 +2278,8 @@ mod tests {
                 .contains("route")
         );
         assert_eq!(params["environments"], serde_json::json!([]));
+        assert_eq!(params["threadSource"], "goalbar");
+        assert_eq!(params["ephemeral"], false);
     }
 
     fn feed_block(text: &str, id: &str) -> BrowserObservationBlock {
