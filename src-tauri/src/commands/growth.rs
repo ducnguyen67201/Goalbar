@@ -8,6 +8,7 @@ use crate::conductor::prompt::LEARNING_PROMPT;
 use crate::conductor::task::structured_task;
 use crate::domain::metrics::GrowthScore;
 use crate::error::CommandError;
+use crate::services::history::HistoryContextService;
 use crate::services::learning::WeeklyLearningDraft;
 use crate::services::scoring::ScoringService;
 
@@ -35,10 +36,14 @@ pub async fn generate_weekly_review(
         .current()
         .await
         .map_err(CommandError::from)?;
+    let history = HistoryContextService::new(state.database.pool().clone())
+        .learning_evidence(30, 8_000)
+        .await
+        .map_err(CommandError::from)?;
     let task = structured_task::<WeeklyLearningDraft>(
         "weekly_learning",
         LEARNING_PROMPT,
-        serde_json::json!({"growthScore": score}),
+        serde_json::json!({"growthScore": score, "historyEvidence": history}),
     );
     state
         .conductor

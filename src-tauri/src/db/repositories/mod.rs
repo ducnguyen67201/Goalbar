@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod content;
 pub mod founder;
+pub mod history;
 pub mod icp;
 pub mod job;
 pub mod metrics;

@@ -16,6 +16,7 @@ import {
   saveVoiceInputSchema,
   storedIcpHypothesesSchema,
 } from "@/schemas/memory"
+import { historyOverviewSchema } from "@/schemas/history"
 
 export function MemoryPage() {
   const { data } = useBootstrap()
@@ -30,6 +31,19 @@ export function MemoryPage() {
     queryFn: async () => {
       if (!isTauriRuntime()) return []
       return invokeValidated("list_icp_hypotheses", {}, z.object({}), storedIcpHypothesesSchema)
+    },
+  })
+  const history = useQuery({
+    queryKey: queryKeys.history,
+    queryFn: async () => {
+      if (!isTauriRuntime())
+        return historyOverviewSchema.parse({
+          schemaVersion: 1,
+          sourceCount: 0,
+          itemCount: 0,
+          platforms: [],
+        })
+      return invokeValidated("get_history_overview", {}, z.object({}).strict(), historyOverviewSchema)
     },
   })
   const saveVoice = useMutation({
@@ -110,6 +124,33 @@ export function MemoryPage() {
         <Badge tone="good">SQLite on this machine</Badge>
       </header>
       <div className="memory-grid">
+        <section className="panel history-overview-card">
+          <div className="panel-heading">
+            <span className="panel-icon">
+              <BrainCircuit size={17} />
+            </span>
+            <div>
+              <h2>Historical evidence</h2>
+              <p>Normalized from official archives and your explicit browser captures.</p>
+            </div>
+          </div>
+          <div className="history-overview-stat">
+            <strong>{history.data?.itemCount ?? 0}</strong>
+            <span>local activity items across {history.data?.sourceCount ?? 0} sources</span>
+          </div>
+          <div className="category-grid">
+            {history.data?.platforms.map((platform) => (
+              <span key={platform.platform}>
+                {platform.platform} <strong>{platform.itemCount}</strong>
+              </span>
+            ))}
+          </div>
+          {!history.data?.itemCount && (
+            <p className="muted-copy">
+              Import an account archive or save an explicit browser capture to teach Tagline from evidence.
+            </p>
+          )}
+        </section>
         <section className="panel">
           <p className="eyebrow">Founder baseline</p>
           <h2>{data?.founder?.productName ?? "Not configured"}</h2>

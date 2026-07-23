@@ -2,6 +2,7 @@ use base64::Engine as _;
 use sha2::{Digest, Sha256};
 use url::Url;
 
+use crate::domain::browser::{BrowserBounds, BrowserRunLimits};
 use crate::error::{AppError, AppResult};
 
 pub fn require_non_empty(value: &str, field: &str, max_chars: usize) -> AppResult<String> {
@@ -50,9 +51,49 @@ pub fn allowlisted_external_url(value: &str) -> AppResult<Url> {
     Ok(url)
 }
 
+pub fn validate_browser_bounds(bounds: BrowserBounds) -> AppResult<()> {
+    if !bounds.x.is_finite()
+        || !bounds.y.is_finite()
+        || !bounds.width.is_finite()
+        || !bounds.height.is_finite()
+        || bounds.x < 0.0
+        || bounds.y < 0.0
+        || !(80.0..=10_000.0).contains(&bounds.width)
+        || !(80.0..=10_000.0).contains(&bounds.height)
+    {
+        return Err(AppError::Validation(
+            "browser bounds are outside the supported desktop area".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_browser_run_limits(limits: &BrowserRunLimits) -> AppResult<()> {
+    if !(1..=500).contains(&limits.maximum_items) {
+        return Err(AppError::Validation(
+            "maximumItems must be between 1 and 500".to_owned(),
+        ));
+    }
+    if !(1..=100).contains(&limits.maximum_steps) {
+        return Err(AppError::Validation(
+            "maximumSteps must be between 1 and 100".to_owned(),
+        ));
+    }
+    if let Some(value) = &limits.earliest_date {
+        chrono::DateTime::parse_from_rfc3339(value).map_err(|_| {
+            AppError::Validation("earliestDate must be an RFC 3339 timestamp".to_owned())
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{allowlisted_external_url, payload_hash, require_non_empty};
+    use super::{
+        allowlisted_external_url, payload_hash, require_non_empty, validate_browser_bounds,
+        validate_browser_run_limits,
+    };
+    use crate::domain::browser::{BrowserBounds, BrowserRunLimits};
 
     #[test]
     fn validates_required_text() {
@@ -72,5 +113,43 @@ mod tests {
         assert!(allowlisted_external_url("https://www.linkedin.com/in/founder").is_ok());
         assert!(allowlisted_external_url("http://www.linkedin.com/in/founder").is_err());
         assert!(allowlisted_external_url("https://linkedin.com.evil.test").is_err());
+    }
+
+    #[test]
+    fn validates_browser_limits_and_bounds() {
+        assert!(
+            validate_browser_bounds(BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+            })
+            .is_ok()
+        );
+        assert!(
+            validate_browser_bounds(BrowserBounds {
+                x: -1.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+            })
+            .is_err()
+        );
+        assert!(
+            validate_browser_run_limits(&BrowserRunLimits {
+                maximum_items: 50,
+                maximum_steps: 25,
+                earliest_date: None,
+            })
+            .is_ok()
+        );
+        assert!(
+            validate_browser_run_limits(&BrowserRunLimits {
+                maximum_items: 501,
+                maximum_steps: 25,
+                earliest_date: None,
+            })
+            .is_err()
+        );
     }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-browser-tab"
+description = "Enables the create_browser_tab command without any pre-configured scope."
+commands.allow = ["create_browser_tab"]
+
+[[permission]]
+identifier = "deny-create-browser-tab"
+description = "Denies the create_browser_tab command without any pre-configured scope."
+commands.deny = ["create_browser_tab"]

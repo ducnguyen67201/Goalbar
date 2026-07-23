@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-generate-icp-hypotheses"
+description = "Enables the generate_icp_hypotheses command without any pre-configured scope."
+commands.allow = ["generate_icp_hypotheses"]
+
+[[permission]]
+identifier = "deny-generate-icp-hypotheses"
+description = "Denies the generate_icp_hypotheses command without any pre-configured scope."
+commands.deny = ["generate_icp_hypotheses"]

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Bot, CheckCircle2, ExternalLink, KeyRound, Link2, LockKeyhole, Trash2 } from "lucide-react"
+import { Bot, CheckCircle2, ExternalLink, Globe2, KeyRound, Link2, LockKeyhole, Trash2 } from "lucide-react"
 import { useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { z } from "zod"
 
 import { useBootstrap } from "@/app/bootstrap"
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { queryKeys } from "@/lib/query-keys"
 import { invokeOutput, invokeValidated, isTauriRuntime } from "@/lib/tauri"
 import { titleCase } from "@/lib/utils"
+import { clearBrowserDataInputSchema } from "@/schemas/browser"
 import { dataArtifactSchema } from "@/schemas/common"
 import {
   beginOAuthInputSchema,
@@ -40,6 +42,7 @@ export function SettingsPage() {
         </Badge>
       </header>
       <AgentSettings agents={bootstrap.data?.agents ?? []} />
+      <BrowserSettings />
       <PlatformSettings />
       <DataSettings />
     </div>
@@ -64,7 +67,7 @@ function AgentSettings({
         </span>
         <div>
           <h2>Reasoning engines</h2>
-          <p>The Rust Conductor detects existing local CLI sessions.</p>
+          <p>Tagline detects existing local Codex and Claude CLI sessions.</p>
         </div>
       </div>
       <div className="settings-list">
@@ -81,6 +84,34 @@ function AgentSettings({
       <p className="fine-print">
         Agents receive bounded content context and JSON Schema. They never receive social access tokens.
       </p>
+    </section>
+  )
+}
+
+function BrowserSettings() {
+  return (
+    <section className="panel browser-settings-callout">
+      <div className="panel-heading">
+        <span className="panel-icon">
+          <Globe2 size={18} />
+        </span>
+        <div>
+          <h2>Integrated browser</h2>
+          <p>Use your existing website accounts locally, then explicitly preview and save evidence.</p>
+        </div>
+      </div>
+      <div className="setting-row">
+        <div>
+          <strong>Recommended path</strong>
+          <small>
+            Sign in inside Tagline. Website sessions stay in the desktop webview profile and never enter
+            prompts or exports.
+          </small>
+        </div>
+        <Link className="button button-primary button-small" to="/browser">
+          Open Browser
+        </Link>
+      </div>
     </section>
   )
 }
@@ -186,8 +217,8 @@ function PlatformSettings() {
           <Link2 size={18} />
         </span>
         <div>
-          <h2>Founder channels</h2>
-          <p>Official browser consent → local loopback → OS keyring.</p>
+          <h2>Official API connections</h2>
+          <p>Optional advanced path for approved integrations and stable API actions.</p>
         </div>
       </div>
       {bootstrap.data?.accounts.length ? (
@@ -315,6 +346,7 @@ function PlatformSettings() {
 
 function DataSettings() {
   const [artifact, setArtifact] = useState<string | null>(null)
+  const [browserConfirmation, setBrowserConfirmation] = useState("")
   const exportData = useMutation({
     mutationFn: () =>
       isTauriRuntime()
@@ -342,6 +374,15 @@ function DataSettings() {
             }),
           ),
     onSuccess: (value) => setArtifact(value.path),
+  })
+  const clearBrowserData = useMutation({
+    mutationFn: () => {
+      const input = { confirmation: browserConfirmation }
+      return isTauriRuntime()
+        ? invokeValidated("clear_browser_data", { input }, clearBrowserDataInputSchema, z.boolean())
+        : Promise.resolve(clearBrowserDataInputSchema.parse(input)).then(() => true)
+    },
+    onSuccess: () => setBrowserConfirmation(""),
   })
   return (
     <section className="panel">
@@ -383,6 +424,28 @@ function DataSettings() {
             Create backup
           </Button>
         </div>
+        <div className="setting-row browser-data-reset">
+          <div>
+            <strong>Clear integrated browser data</strong>
+            <small>Removes local website cookies, storage, and cache. Imported history is not removed.</small>
+          </div>
+          <div className="confirmation-action">
+            <Input
+              aria-label="Browser data confirmation"
+              value={browserConfirmation}
+              onChange={(event) => setBrowserConfirmation(event.target.value)}
+              placeholder="Type CLEAR BROWSER DATA"
+            />
+            <Button
+              variant="danger"
+              size="small"
+              disabled={browserConfirmation !== "CLEAR BROWSER DATA" || clearBrowserData.isPending}
+              onClick={() => clearBrowserData.mutate()}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
       </div>
       {artifact && (
         <div className="scope-preview">
@@ -391,6 +454,17 @@ function DataSettings() {
             <strong>Local artifact created</strong>
             <small>{artifact}</small>
           </span>
+        </div>
+      )}
+      {clearBrowserData.isSuccess && (
+        <p className="success-note">
+          <CheckCircle2 size={14} /> Integrated browser data cleared.
+        </p>
+      )}
+      {clearBrowserData.error && (
+        <div className="inline-error">
+          <strong>Browser data not cleared</strong>
+          <span>{clearBrowserData.error.message}</span>
         </div>
       )}
     </section>

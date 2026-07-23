@@ -52,15 +52,33 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
         "SELECT json_group_array(json_object('id', id, 'founderId', founder_id, 'summary', summary, 'evidence', json(evidence_json), 'confidence', confidence, 'status', status, 'createdAt', created_at)) FROM learnings",
     )
     .await?;
+    let ingestion_sources = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'platform', platform, 'sourceKind', source_kind, 'ownership', ownership, 'displayName', display_name, 'accountHandle', account_handle, 'metadata', json(metadata_json), 'createdAt', created_at)) FROM ingestion_sources",
+    )
+    .await?;
+    let activity_items = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'sourceId', source_id, 'platform', platform, 'itemKind', item_kind, 'ownership', ownership, 'direction', direction, 'remoteId', remote_id, 'canonicalUrl', canonical_url, 'authorHandle', author_handle, 'counterpartyHandle', counterparty_handle, 'body', body, 'publishedAt', published_at, 'observedAt', observed_at, 'metadata', json(metadata_json))) FROM activity_items",
+    )
+    .await?;
+    let ingestion_runs = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'sourceId', source_id, 'status', status, 'provider', provider, 'objective', objective, 'limits', json(limits_json), 'counts', json(counts_json), 'pauseReason', pause_reason, 'errorCode', error_code, 'startedAt', started_at, 'updatedAt', updated_at, 'completedAt', completed_at)) FROM ingestion_runs",
+    )
+    .await?;
     let manifest = serde_json::json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "exportedAt": created_at.to_rfc3339(),
         "includesSecrets": false,
         "founderProfiles": founder,
         "icpHypotheses": icp,
         "contentIdeas": ideas,
         "experiments": experiments,
-        "learnings": learnings
+        "learnings": learnings,
+        "ingestionSources": ingestion_sources,
+        "ingestionRuns": ingestion_runs,
+        "activityItems": activity_items
     });
     tokio::fs::write(&path, serde_json::to_vec_pretty(&manifest)?).await?;
     Ok(DataArtifact {
@@ -108,6 +126,10 @@ pub async fn factory_reset(state: &AppState, confirmation: &str) -> AppResult<()
             .await?;
     let mut transaction = state.database.pool().begin().await?;
     for table in [
+        "browser_checkpoints",
+        "activity_items",
+        "ingestion_runs",
+        "ingestion_sources",
         "job_attempts",
         "jobs",
         "messages",
@@ -158,8 +180,19 @@ mod tests {
     async fn reset_requires_exact_confirmation() {
         let state = AppState::for_tests().await.expect("state");
         assert!(factory_reset(&state, "reset").await.is_err());
+        sqlx::query("INSERT INTO ingestion_sources (id, platform, source_kind, ownership, display_name, source_fingerprint, metadata_json, created_at) VALUES (?, 'x', 'archive', 'own', 'fixture', 'fixture', '{}', ?)")
+            .bind(uuid::Uuid::new_v4().to_string())
+            .bind(chrono::Utc::now().to_rfc3339())
+            .execute(state.database.pool())
+            .await
+            .expect("seed ingestion source");
         factory_reset(&state, "RESET LOCAL LAB")
             .await
             .expect("reset");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ingestion_sources")
+            .fetch_one(state.database.pool())
+            .await
+            .expect("source count");
+        assert_eq!(count, 0);
     }
 }

@@ -2,6 +2,15 @@
 
 Runtime capability discovery is authoritative. This file records the expected public ceiling.
 
+| Browser capability       | X                                               | Reddit      | LinkedIn    |
+| ------------------------ | ----------------------------------------------- | ----------- | ----------- |
+| Local navigation/sign-in | conditional on website embedded-engine behavior | conditional | conditional |
+| Explicit preview/capture | supported                                       | supported   | supported   |
+| Bounded auto-collection  | manual_only                                     | manual_only | manual_only |
+| Fill draft               | manual_only                                     | manual_only | manual_only |
+| Final Publish/Send click | unsupported                                     | unsupported | unsupported |
+| Official archive import  | supported                                       | supported   | supported   |
+
 | Platform | Publish                         | Own content/metrics                | Replies/comments               | Direct messages                  |
 | -------- | ------------------------------- | ---------------------------------- | ------------------------------ | -------------------------------- |
 | X        | supported with granted scope    | supported according to access/tier | conditional on API eligibility | supported with granted DM scopes |
@@ -9,3 +18,5 @@ Runtime capability discovery is authoritative. This file records the expected pu
 | LinkedIn | supported with approved product | restricted                         | restricted                     | unsupported; open in LinkedIn    |
 
 States are `supported`, `unsupported`, `approval_pending`, or `unknown`. Unsupported actions must provide a reason and recovery action.
+
+Browser policy states are `explicit_capture`, `bounded_collection`, `manual_only`, or `blocked`. They do not imply official API approval.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-history-archive"
+description = "Enables the preview_history_archive command without any pre-configured scope."
+commands.allow = ["preview_history_archive"]
+
+[[permission]]
+identifier = "deny-preview-history-archive"
+description = "Denies the preview_history_archive command without any pre-configured scope."
+commands.deny = ["preview_history_archive"]

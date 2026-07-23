@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::adapters::agent::AgentRegistry;
 use crate::adapters::platform::RemoteMessage;
 use crate::app_state::AppState;
+use crate::conductor::context::ContextAssembler;
 use crate::conductor::prompt::REPLY_PROMPT;
 use crate::conductor::task::structured_task;
 use crate::db::repositories::relationship::RelationshipRepository;
@@ -13,6 +14,7 @@ use crate::domain::approval::Approval;
 use crate::domain::relationship::{ConversationSummary, ReplyOptions};
 use crate::error::{AppError, CommandError};
 use crate::services::communication::CommunicationService;
+use crate::services::history::HistoryContextService;
 
 #[tauri::command]
 pub async fn list_conversations(
@@ -60,11 +62,26 @@ pub async fn draft_reply(
             .latest()
             .await
             .map_err(CommandError::from)?;
-    let task = structured_task::<ReplyOptions>(
-        "reply_options",
-        REPLY_PROMPT,
-        serde_json::json!({"founder": founder, "messages": messages}),
-    );
+    let history = HistoryContextService::new(state.database.pool().clone())
+        .reply_evidence(12, 4_000)
+        .await
+        .map_err(CommandError::from)?;
+    let context = ContextAssembler::new(20_000).assemble([
+        (
+            "founder".to_owned(),
+            serde_json::to_value(founder)
+                .map_err(AppError::from)
+                .map_err(CommandError::from)?,
+        ),
+        (
+            "messages".to_owned(),
+            serde_json::to_value(messages)
+                .map_err(AppError::from)
+                .map_err(CommandError::from)?,
+        ),
+        ("historyEvidence".to_owned(), history),
+    ]);
+    let task = structured_task::<ReplyOptions>("reply_options", REPLY_PROMPT, context);
     state
         .conductor
         .run::<ReplyOptions>(Uuid::new_v4(), provider, task)

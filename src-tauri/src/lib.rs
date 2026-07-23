@@ -2,6 +2,7 @@
 
 pub mod adapters;
 pub mod app_state;
+pub mod browser;
 pub mod commands;
 pub mod conductor;
 pub mod config;
@@ -19,6 +20,7 @@ use tauri::Manager as _;
 pub fn run() {
     logging::init();
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let default_dir = app.path().app_data_dir()?;
             let data_dir = config::resolve_data_dir(default_dir)
@@ -61,6 +63,28 @@ pub fn run() {
             commands::settings::export_local_data,
             commands::settings::backup_local_database,
             commands::settings::factory_reset_local_data,
+            commands::browser::list_browser_tabs,
+            commands::browser::create_browser_tab,
+            commands::browser::activate_browser_tab,
+            commands::browser::update_browser_bounds,
+            commands::browser::navigate_browser_tab,
+            commands::browser::browser_go_back,
+            commands::browser::browser_go_forward,
+            commands::browser::reload_browser_tab,
+            commands::browser::close_browser_tab,
+            commands::browser::hide_browser_views,
+            commands::browser::clear_browser_data,
+            commands::browser::get_browser_panel_width,
+            commands::browser::set_browser_panel_width,
+            commands::browser::observe_browser_tab,
+            commands::browser::preview_browser_capture,
+            commands::browser::commit_browser_capture,
+            commands::browser::start_browser_collection,
+            commands::browser::cancel_browser_collection,
+            commands::history::choose_history_archive,
+            commands::history::preview_history_archive,
+            commands::history::import_history_archive,
+            commands::history::get_history_overview,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = result {

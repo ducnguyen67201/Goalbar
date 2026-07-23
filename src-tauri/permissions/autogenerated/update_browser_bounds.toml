@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-browser-bounds"
+description = "Enables the update_browser_bounds command without any pre-configured scope."
+commands.allow = ["update_browser_bounds"]
+
+[[permission]]
+identifier = "deny-update-browser-bounds"
+description = "Denies the update_browser_bounds command without any pre-configured scope."
+commands.deny = ["update_browser_bounds"]

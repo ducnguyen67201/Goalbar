@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-commit-browser-capture"
+description = "Enables the commit_browser_capture command without any pre-configured scope."
+commands.allow = ["commit_browser_capture"]
+
+[[permission]]
+identifier = "deny-commit-browser-capture"
+description = "Denies the commit_browser_capture command without any pre-configured scope."
+commands.deny = ["commit_browser_capture"]

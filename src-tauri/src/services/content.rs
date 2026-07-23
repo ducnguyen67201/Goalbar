@@ -10,18 +10,21 @@ use crate::db::repositories::content::ContentRepository;
 use crate::domain::content::{ContentIdeaInput, GeneratedContentSet};
 use crate::domain::founder::FounderProfile;
 use crate::error::AppResult;
+use crate::services::history::HistoryContextService;
 
 #[derive(Debug, Clone)]
 pub struct ContentService {
     conductor: Conductor,
     repository: ContentRepository,
+    history: HistoryContextService,
 }
 
 impl ContentService {
     pub fn new(conductor: Conductor, pool: sqlx::SqlitePool) -> Self {
         Self {
             conductor,
-            repository: ContentRepository::new(pool),
+            repository: ContentRepository::new(pool.clone()),
+            history: HistoryContextService::new(pool),
         }
     }
 
@@ -31,9 +34,17 @@ impl ContentService {
         founder: &FounderProfile,
         input: ContentIdeaInput,
     ) -> AppResult<(Uuid, GeneratedContentSet)> {
+        let voice_examples = self.history.voice_examples(10, 5_000).await?;
+        let platform_examples = json!({
+            "x": self.history.content_examples(crate::domain::Platform::X, 5, 3_000).await?,
+            "reddit": self.history.content_examples(crate::domain::Platform::Reddit, 5, 3_000).await?,
+            "linkedin": self.history.content_examples(crate::domain::Platform::Linkedin, 5, 3_000).await?,
+        });
         let context = ContextAssembler::new(30_000).assemble([
             ("founder".to_owned(), serde_json::to_value(founder)?),
             ("idea".to_owned(), serde_json::to_value(&input)?),
+            ("voiceExamples".to_owned(), voice_examples),
+            ("platformExamples".to_owned(), platform_examples),
             (
                 "platformGuidance".to_owned(),
                 json!({

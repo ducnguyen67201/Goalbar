@@ -1,14 +1,23 @@
 # Tagline
 
-A local-first growth operating system for solo founders. It connects to an existing Codex or Claude Code CLI, keeps durable product memory in local SQLite, and operates approved X, Reddit, and LinkedIn capabilities through Rust adapters.
+A local-first growth operating system for solo founders. It connects to an existing Codex or Claude Code CLI, keeps durable product memory in local SQLite, and puts a controlled X, Reddit, and LinkedIn browser beside the founder’s content, ICP, inbox, and learning workflows.
+
+## Local research browser
+
+The desktop app includes an integrated browser with a React toolbar and Rust-owned native child webviews. Users sign into platform websites on their own machine. Tagline can preview and normalize explicitly selected or visible content, but it never returns cookies, passwords, tokens, raw HTML, or arbitrary JavaScript to React or an agent.
+
+For the user’s own historical record, import the official X, LinkedIn, or Reddit account archive. Archive import is the completeness path; browser capture is a bounded supplement for recent evidence and ICP research. Automated website collection currently reports a manual-only policy state for all three platforms.
+
+See [local research browser](docs/browser-conductor.md) and [history import](docs/history-import.md).
 
 ## Privacy model
 
 - No Tagline cloud account or backend.
-- Platform login happens in the official system-browser consent page.
+- Website login can happen inside the local integrated browser. Those website sessions remain in its local browser profile.
+- Optional API login happens in the official system-browser consent page.
 - OAuth returns to a temporary `127.0.0.1` listener on the same machine.
 - Platform tokens remain in the operating-system keyring.
-- Codex and Claude receive bounded content context but never platform tokens.
+- Codex and Claude receive bounded normalized evidence but never platform tokens, website sessions, or archive paths.
 - External writes always require a human approval tied to the exact revision.
 
 ## Development
@@ -40,13 +49,13 @@ pnpm audit:rust
 
 The scoped RustSec exception used by `audit:rust` is documented in `docs/security-audit.md`.
 
-Live platform tests are opt-in and require approved developer applications and dedicated test accounts. They must never run in ordinary CI.
+Live API tests are opt-in and require approved developer applications and dedicated test accounts. Integrated-browser tests are also manual and opt-in because platform login, CAPTCHA, and embedded-webview behavior cannot be exercised honestly in ordinary CI.
 
 ## Current platform boundary
 
-- X: OAuth 2.0 PKCE, posts, eligible replies, DMs, and permitted metrics.
-- Reddit: approved installed-app OAuth, posts, comments, and private messages subject to current Data API terms.
-- LinkedIn: approved native PKCE and social capabilities; general member DMs are explicitly unsupported and open in LinkedIn instead.
+- Browser: local sign-in, navigation, explicit preview/capture, and manual copy/paste publishing when the website permits the embedded engine.
+- History: versioned, tolerant official-archive import with provenance, idempotency, and bounded downstream context.
+- Official APIs: remain optional for stable posting, sync, replies, and metrics where an app has current approval.
 
 See `docs/platform-access.md` before attempting a live connection.
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-approve-variant"
+description = "Enables the approve_variant command without any pre-configured scope."
+commands.allow = ["approve_variant"]
+
+[[permission]]
+identifier = "deny-approve-variant"
+description = "Denies the approve_variant command without any pre-configured scope."
+commands.deny = ["approve_variant"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-generate-content-variants"
+description = "Enables the generate_content_variants command without any pre-configured scope."
+commands.allow = ["generate_content_variants"]
+
+[[permission]]
+identifier = "deny-generate-content-variants"
+description = "Denies the generate_content_variants command without any pre-configured scope."
+commands.deny = ["generate_content_variants"]

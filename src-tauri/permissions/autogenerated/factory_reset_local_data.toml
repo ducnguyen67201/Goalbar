@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-factory-reset-local-data"
+description = "Enables the factory_reset_local_data command without any pre-configured scope."
+commands.allow = ["factory_reset_local_data"]
+
+[[permission]]
+identifier = "deny-factory-reset-local-data"
+description = "Denies the factory_reset_local_data command without any pre-configured scope."
+commands.deny = ["factory_reset_local_data"]

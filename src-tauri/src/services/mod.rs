@@ -1,7 +1,9 @@
 pub mod bootstrap;
+pub mod browser;
 pub mod communication;
 pub mod content;
 pub mod data;
+pub mod history;
 pub mod learning;
 pub mod onboarding;
 pub mod publishing;

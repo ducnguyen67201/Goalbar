@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-choose-history-archive"
+description = "Enables the choose_history_archive command without any pre-configured scope."
+commands.allow = ["choose_history_archive"]
+
+[[permission]]
+identifier = "deny-choose-history-archive"
+description = "Denies the choose_history_archive command without any pre-configured scope."
+commands.deny = ["choose_history_archive"]

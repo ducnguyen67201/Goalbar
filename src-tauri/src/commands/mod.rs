@@ -1,7 +1,9 @@
 pub mod agents;
 pub mod bootstrap;
+pub mod browser;
 pub mod content;
 pub mod growth;
+pub mod history;
 pub mod inbox;
 pub mod onboarding;
 pub mod platforms;

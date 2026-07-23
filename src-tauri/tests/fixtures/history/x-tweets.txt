@@ -1,0 +1,9 @@
+window.YTD.tweets.part0 = [
+  {
+    "tweet": {
+      "id_str": "1001",
+      "created_at": "2025-02-03T12:00:00Z",
+      "full_text": "Synthetic founder lesson: interview before automating."
+    }
+  }
+];

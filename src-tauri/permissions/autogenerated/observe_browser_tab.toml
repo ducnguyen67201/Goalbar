@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-observe-browser-tab"
+description = "Enables the observe_browser_tab command without any pre-configured scope."
+commands.allow = ["observe_browser_tab"]
+
+[[permission]]
+identifier = "deny-observe-browser-tab"
+description = "Denies the observe_browser_tab command without any pre-configured scope."
+commands.deny = ["observe_browser_tab"]

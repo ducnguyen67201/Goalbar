@@ -2,6 +2,8 @@
 
 This ledger is an implementation gate, not a hosted-infrastructure requirement. Users connect locally; the APIs still require a registered application and approved scopes.
 
+The integrated browser does not need a Tagline developer application ID. It uses the user’s normal local website session when the site permits the embedded browser engine. This does not grant API access, remove platform restrictions, or authorize bulk automation. Tagline’s shipping website-collection policy is manual-only; use explicit capture or an official archive.
+
 | Platform | App type                       | Required access                                                               | OAuth redirect                                 | Pricing/retention                          | Status           |
 | -------- | ------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------ | ---------------- |
 | X        | Native/public OAuth 2.0 client | `tweet.read tweet.write users.read dm.read dm.write offline.access` as needed | registered loopback URI                        | pay-per-use; set a monthly budget          | approval_pending |

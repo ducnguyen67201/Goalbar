@@ -4,10 +4,12 @@ use std::sync::Arc;
 use crate::adapters::agent::AgentRegistry;
 use crate::adapters::platform::PlatformRegistry;
 use crate::adapters::platform::oauth::OAuthManager;
+use crate::browser::BrowserManager;
 use crate::conductor::runner::Conductor;
 use crate::db::Database;
 use crate::error::AppResult;
 use crate::secrets::{OsSecretStore, SecretStore};
+use crate::services::history::HistorySelectionManager;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -16,6 +18,8 @@ pub struct AppState {
     pub conductor: Conductor,
     pub platforms: PlatformRegistry,
     pub oauth: OAuthManager,
+    pub browser: BrowserManager,
+    pub history_selections: HistorySelectionManager,
     pub secrets: Arc<dyn SecretStore>,
 }
 
@@ -29,6 +33,8 @@ impl AppState {
             agents,
             platforms: PlatformRegistry::default(),
             oauth: OAuthManager::default(),
+            browser: BrowserManager::default(),
+            history_selections: HistorySelectionManager::default(),
             secrets: Arc::new(OsSecretStore),
         })
     }
@@ -43,6 +49,8 @@ impl AppState {
             agents,
             platforms: PlatformRegistry::default(),
             oauth: OAuthManager::default(),
+            browser: BrowserManager::default(),
+            history_selections: HistorySelectionManager::default(),
             secrets: Arc::new(crate::secrets::MemorySecretStore::default()),
         })
     }

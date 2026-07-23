@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-platform-statuses"
+description = "Enables the list_platform_statuses command without any pre-configured scope."
+commands.allow = ["list_platform_statuses"]
+
+[[permission]]
+identifier = "deny-list-platform-statuses"
+description = "Denies the list_platform_statuses command without any pre-configured scope."
+commands.deny = ["list_platform_statuses"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-disconnect-platform"
+description = "Enables the disconnect_platform command without any pre-configured scope."
+commands.allow = ["disconnect_platform"]
+
+[[permission]]
+identifier = "deny-disconnect-platform"
+description = "Denies the disconnect_platform command without any pre-configured scope."
+commands.deny = ["disconnect_platform"]

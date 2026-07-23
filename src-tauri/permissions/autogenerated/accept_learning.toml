@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accept-learning"
+description = "Enables the accept_learning command without any pre-configured scope."
+commands.allow = ["accept_learning"]
+
+[[permission]]
+identifier = "deny-accept-learning"
+description = "Denies the accept_learning command without any pre-configured scope."
+commands.deny = ["accept_learning"]

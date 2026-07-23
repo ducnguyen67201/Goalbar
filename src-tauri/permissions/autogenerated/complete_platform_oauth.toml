@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-complete-platform-oauth"
+description = "Enables the complete_platform_oauth command without any pre-configured scope."
+commands.allow = ["complete_platform_oauth"]
+
+[[permission]]
+identifier = "deny-complete-platform-oauth"
+description = "Denies the complete_platform_oauth command without any pre-configured scope."
+commands.deny = ["complete_platform_oauth"]

@@ -4,6 +4,8 @@ import { bootstrapFixture } from "@/test/fixtures"
 
 import { bootstrapSchema } from "./bootstrap"
 import { founderInputSchema } from "./founder"
+import { browserCaptureInputSchema, browserRunProgressSchema } from "./browser"
+import { historyPreviewSchema } from "./history"
 import { beginOAuthInputSchema } from "./platform"
 
 describe("boundary schemas", () => {
@@ -34,5 +36,47 @@ describe("boundary schemas", () => {
         scopes: [],
       }).success,
     ).toBe(false)
+  })
+
+  it("rejects unknown fields on browser research inputs", () => {
+    expect(
+      browserCaptureInputSchema.safeParse({
+        tabId: "b9d7afe0-1807-4ad9-bf22-2945f0bb9081",
+        mode: "visible",
+        ownership: "reference",
+        arbitraryJavaScript: "window.submit()",
+      }).success,
+    ).toBe(false)
+  })
+
+  it("accepts versioned history and run-state contracts", () => {
+    expect(
+      browserRunProgressSchema.parse({
+        runId: "b9d7afe0-1807-4ad9-bf22-2945f0bb9081",
+        status: "paused",
+        step: 2,
+        itemCount: 4,
+        newItemCount: 0,
+        pauseReason: "verification_required",
+        summary: null,
+      }).status,
+    ).toBe("paused")
+    expect(
+      historyPreviewSchema.safeParse({
+        schemaVersion: 1,
+        selectionId: "b9d7afe0-1807-4ad9-bf22-2945f0bb9081",
+        platform: "x",
+        parserVersion: "x-archive-v1",
+        displayName: "archive.zip",
+        accountHandle: null,
+        categories: [],
+        estimatedRecords: 0,
+        earliestAt: null,
+        latestAt: null,
+        warnings: [],
+        unsupportedMembers: [],
+        sourceFingerprint: "synthetic",
+      }).success,
+    ).toBe(true)
   })
 })

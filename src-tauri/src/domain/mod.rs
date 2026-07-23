@@ -1,7 +1,9 @@
 pub mod approval;
+pub mod browser;
 pub mod content;
 pub mod experiment;
 pub mod founder;
+pub mod history;
 pub mod icp;
 pub mod job;
 pub mod metrics;

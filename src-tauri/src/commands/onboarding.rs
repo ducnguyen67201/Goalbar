@@ -12,6 +12,7 @@ use crate::db::repositories::icp::IcpRepository;
 use crate::domain::founder::{FounderProfile, FounderProfileInput, VoiceProfileInput};
 use crate::domain::icp::{IcpHypotheses, StoredIcpHypothesis};
 use crate::error::{AppError, CommandError};
+use crate::services::history::HistoryContextService;
 use crate::services::onboarding::OnboardingService;
 
 #[tauri::command]
@@ -66,12 +67,19 @@ pub async fn generate_icp_hypotheses(
             ))
         })?;
     let provider = AgentRegistry::parse_provider(&input.provider).map_err(CommandError::from)?;
-    let context = ContextAssembler::new(20_000).assemble([(
-        "founder".to_owned(),
-        serde_json::to_value(&founder)
-            .map_err(AppError::from)
-            .map_err(CommandError::from)?,
-    )]);
+    let history = HistoryContextService::new(state.database.pool().clone())
+        .icp_evidence(20, 8_000)
+        .await
+        .map_err(CommandError::from)?;
+    let context = ContextAssembler::new(20_000).assemble([
+        (
+            "founder".to_owned(),
+            serde_json::to_value(&founder)
+                .map_err(AppError::from)
+                .map_err(CommandError::from)?,
+        ),
+        ("historyEvidence".to_owned(), history),
+    ]);
     let task = structured_task::<IcpHypotheses>("icp_hypotheses", ICP_PROMPT, context);
     let (hypotheses, _result) = state
         .conductor
