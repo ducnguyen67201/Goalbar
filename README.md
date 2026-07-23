@@ -29,7 +29,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-No `.env` is required. Optional diagnostics: `RUST_LOG` and `GOALBAR_HOME`.
+No `.env` is required. Optional diagnostics: `RUST_LOG` and `GOALBAR_HOME`. If more than one Codex CLI is installed, `GOALBAR_CODEX_PATH` can pin Goalbar to a specific healthy executable.
 
 ## Validation
 
