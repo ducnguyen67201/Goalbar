@@ -189,3 +189,22 @@ async fn migration_thirteen_adds_a_truthful_saved_reply_ledger() {
     assert!(schema.contains("'confirmed_posted'"));
     assert!(schema.contains("'reddit'"));
 }
+
+#[tokio::test]
+async fn migration_fourteen_supports_partial_inbox_scans() {
+    let database = Database::in_memory().await.expect("database");
+    sqlx::query(
+        "INSERT INTO browser_inbox_scan_state (platform, status, item_count, last_scanned_at) VALUES ('linkedin', 'partial', 500, 'now')",
+    )
+    .execute(database.pool())
+    .await
+    .expect("partial scan status");
+
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM browser_inbox_scan_state WHERE platform = 'linkedin'",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("stored partial status");
+    assert_eq!(status, "partial");
+}

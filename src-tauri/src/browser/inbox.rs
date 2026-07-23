@@ -152,7 +152,7 @@ fn normalize_item(raw: RawItem, platform: Platform) -> Option<BrowserInboxItem> 
     if display_name.is_empty() {
         return None;
     }
-    let remote_url = strip_tracking(browser_url(&raw.remote_url).ok()?);
+    let remote_url = normalized_remote_url(&raw.remote_url, platform)?;
     if platform_from_url(&remote_url) != Some(platform) {
         return None;
     }
@@ -184,6 +184,19 @@ fn normalize_item(raw: RawItem, platform: Platform) -> Option<BrowserInboxItem> 
     })
 }
 
+fn normalized_remote_url(value: &str, platform: Platform) -> Option<url::Url> {
+    let remote_url = strip_tracking(browser_url(value).ok()?);
+    if platform == Platform::Linkedin
+        && remote_url
+            .path_segments()
+            .map(|mut segments| segments.any(|segment| segment.eq_ignore_ascii_case("undefined")))
+            .unwrap_or(false)
+    {
+        return browser_url("https://www.linkedin.com/messaging/").ok();
+    }
+    Some(remote_url)
+}
+
 fn bounded(value: &str, maximum: usize) -> String {
     value
         .chars()
@@ -205,7 +218,12 @@ fn bounded(value: &str, maximum: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{BrowserInboxDirection, RawItem, normalize_item};
+    use std::collections::HashSet;
+
+    use super::{
+        BrowserInboxDirection, BrowserInboxScanMode, BrowserInboxScanProgress,
+        BrowserInboxScanStop, RawItem, normalize_item,
+    };
     use crate::domain::Platform;
 
     #[test]
@@ -265,5 +283,35 @@ mod tests {
         .expect("the row remains useful without a false deep link");
 
         assert_eq!(item.remote_url, "https://www.linkedin.com/messaging/");
+    }
+
+    #[test]
+    fn initial_scan_continues_past_the_old_five_batch_limit_until_exhausted() {
+        let mut progress =
+            BrowserInboxScanProgress::new(BrowserInboxScanMode::Initial, HashSet::new());
+
+        for index in 0..6 {
+            let remote_id = format!("conversation-{index}");
+            assert_eq!(progress.observe([remote_id.as_str()], true), None);
+        }
+
+        assert_eq!(
+            progress.observe(["oldest-conversation"], false),
+            Some(BrowserInboxScanStop::Exhausted)
+        );
+    }
+
+    #[test]
+    fn incremental_scan_stops_after_it_reaches_a_known_conversation() {
+        let mut progress = BrowserInboxScanProgress::new(
+            BrowserInboxScanMode::Incremental,
+            HashSet::from(["known-conversation".to_owned()]),
+        );
+
+        assert_eq!(progress.observe(["new-conversation"], true), None);
+        assert_eq!(
+            progress.observe(["known-conversation"], true),
+            Some(BrowserInboxScanStop::KnownConversation)
+        );
     }
 }
