@@ -1,0 +1,53 @@
+[package]
+name = "tagline"
+version = "0.1.0"
+description = "Local-first growth operating system for solo founders"
+authors = ["Tagline contributors"]
+license = "AGPL-3.0-or-later"
+edition = "2024"
+rust-version = "1.88"
+
+[lib]
+name = "tagline_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+open = "5"
+rand = "0.9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+schemars = { version = "1", features = ["chrono04", "uuid1"] }
+secrecy = { version = "0.10", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
+tauri = { version = "2", features = [] }
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = { version = "2", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+which = "8"
+
+[dev-dependencies]
+pretty_assertions = "1"
+wiremock = "0.6"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "deny"
