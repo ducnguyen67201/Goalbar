@@ -61,4 +61,11 @@ See `docs/platform-access.md` before attempting a live connection.
 
 ## License
 
-AGPL-3.0-or-later. This follows the initial product brief decision and should be reconfirmed before accepting outside contributions.
+Goalbar is source-available under the
+[Goalbar Personal Local Use License](LICENSE). You may download, run, back up,
+and modify it only for your own personal, non-commercial use on devices you own
+or control.
+
+Commercial use, workplace or client use, redistribution, shared access, hosted
+deployments, and software-as-a-service use are not permitted without a separate
+written license. This is not an open-source license.

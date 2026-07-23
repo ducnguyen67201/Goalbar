@@ -1,9 +1,123 @@
-Goalbar is licensed under the GNU Affero General Public License,
-version 3 or (at your option) any later version (AGPL-3.0-or-later).
+GOALBAR PERSONAL LOCAL USE LICENSE
+Version 1.0, July 2026
 
-Copyright (c) 2026 Goalbar contributors.
+Copyright (c) 2026 Duc Nguyen. All rights reserved.
 
-You may obtain the full license text at:
-https://www.gnu.org/licenses/agpl-3.0.txt
+This license applies to the Goalbar source code, software, documentation,
+designs, and other materials in this repository for which the Licensor owns the
+copyright or has authority to license them (the "Software").
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+By downloading, copying, installing, modifying, or using the Software, you agree
+to the terms below.
+
+1. Personal local-use grant
+
+Subject to this license, the Licensor grants you, as a natural person, a
+limited, non-exclusive, non-transferable license to:
+
+  a. download and run the Software for your own personal, non-commercial use on
+     devices that you own or control;
+
+  b. make a reasonable number of backup copies for that same use; and
+
+  c. inspect and modify the Software solely for that same use.
+
+The Software must remain local to your devices and may be used only by you.
+
+2. No commercial or organizational use
+
+You may not use the Software, directly or indirectly:
+
+  a. for commercial advantage, monetary compensation, or revenue generation;
+
+  b. for or on behalf of a company, employer, client, partnership, nonprofit,
+     government body, educational institution, or other organization;
+
+  c. as part of paid employment, consulting, contracting, advertising, lead
+     generation, sales, marketing, or any other business operation; or
+
+  d. in connection with a product or service that is sold, licensed, subscribed
+     to, sponsored, or otherwise monetized.
+
+A use is commercial even if no separate fee is charged for the Software.
+
+3. No sharing, distribution, or hosted access
+
+Except for the limited backup right in Section 1, you may not:
+
+  a. sell, rent, lease, sublicense, publish, distribute, or provide copies of
+     the Software or a modified version to anyone else;
+
+  b. make the Software or a modified version available as a hosted, cloud,
+     networked, managed, or software-as-a-service offering;
+
+  c. operate the Software so that another person can access or benefit from it,
+     whether remotely or in person; or
+
+  d. remove or alter copyright, license, attribution, or proprietary notices.
+
+No rights are granted to use Goalbar's name, logos, or other trademarks.
+
+4. No sublicensing or transfer
+
+The rights granted by this license belong only to you. You may not sublicense,
+assign, or transfer them. Any attempted sublicense, assignment, or transfer is
+void.
+
+5. Other rights reserved
+
+The Software is licensed, not sold. The Licensor retains all rights not
+expressly granted by this license. No patent rights are granted.
+
+6. Termination
+
+Your rights under this license terminate automatically if you breach any term.
+Upon termination, you must stop using the Software and delete all copies in your
+possession or control. Sections 5 and 7 through 12 survive termination.
+
+7. Disclaimer of warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. YOU USE THE SOFTWARE AT YOUR OWN
+RISK.
+
+8. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE LICENSOR AND CONTRIBUTORS WILL NOT BE
+LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR
+PUNITIVE DAMAGES, OR FOR ANY LOSS OF DATA, PROFITS, REVENUE, BUSINESS, OR
+GOODWILL, ARISING FROM OR RELATED TO THE SOFTWARE OR THIS LICENSE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE TOTAL LIABILITY OF THE LICENSOR AND
+CONTRIBUTORS FOR ALL CLAIMS ARISING FROM OR RELATED TO THE SOFTWARE OR THIS
+LICENSE WILL NOT EXCEED THE AMOUNT YOU PAID DIRECTLY TO THE LICENSOR FOR THE
+SOFTWARE DURING THE TWELVE MONTHS BEFORE THE EVENT GIVING RISE TO THE CLAIM.
+
+9. Separate commercial license
+
+Commercial, organizational, distribution, hosted, and other uses not permitted
+above require a separate written license from the Licensor.
+
+10. Third-party materials
+
+Third-party software, libraries, assets, and other materials included with or
+used by the Software remain subject to their own license terms. This license
+does not replace or restrict those third-party terms.
+
+11. Prior versions
+
+This license applies to versions of the Software distributed with this license.
+It does not revoke rights validly granted under a different license for an
+earlier copy or version.
+
+12. Severability
+
+If any provision of this license is held unenforceable, that provision will be
+limited to the minimum extent necessary, and the remaining provisions will
+continue in effect.
+
+This is a source-available license, not an open-source license.
+
+License reference: LicenseRef-Goalbar-Personal-Local-Use-1.0

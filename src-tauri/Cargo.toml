@@ -3,7 +3,7 @@ name = "goalbar"
 version = "0.1.0"
 description = "Local-first growth operating system for solo founders"
 authors = ["Goalbar contributors"]
-license = "AGPL-3.0-or-later"
+license-file = "../LICENSE"
 edition = "2024"
 rust-version = "1.88"
 
