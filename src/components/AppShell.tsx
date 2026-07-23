@@ -1,13 +1,4 @@
-import {
-  BarChart3,
-  BrainCircuit,
-  Globe2,
-  Inbox,
-  LayoutDashboard,
-  PenLine,
-  Settings2,
-  Sparkles,
-} from "lucide-react"
+import { BarChart3, BrainCircuit, Globe2, Inbox, LayoutDashboard, PenLine, Settings2 } from "lucide-react"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
 
 import { WorkbenchTitlebar } from "@/components/WorkbenchTitlebar"
@@ -32,13 +23,13 @@ export function AppShell() {
     <div className={cn("app-frame", browserRoute && "app-frame-browser")}>
       <WorkbenchTitlebar />
       <aside className="sidebar">
-        <NavLink className="brand" to="/" aria-label="Tagline home">
-          <span className="brand-mark">
-            <Sparkles size={18} />
+        <NavLink className="brand" to="/" aria-label="Goalbar home">
+          <span className="brand-mark brand-mark-logo" aria-hidden="true">
+            <img src="/goalbar-logo-8bit.png" alt="" />
           </span>
           <span>
-            <strong>Tagline</strong>
-            <small>Founder OS</small>
+            <strong>Goalbar</strong>
+            <small>Local growth OS</small>
           </span>
         </NavLink>
         <nav aria-label="Main navigation">

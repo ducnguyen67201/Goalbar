@@ -4,7 +4,7 @@
 
 Implemented the complete local-first Browser Conductor and official-history-import MVP on branch `feat/browser-conductor-history-import`.
 
-Tagline now has a light, Codex-inspired three-pane workbench with a Rust-owned native browser surface, strict remote-webview isolation, explicit semantic capture, policy-gated bounded collection, opaque archive selection, versioned X/LinkedIn/Reddit parsers, provenance-aware SQLite history, and bounded evidence integration for ICP, voice, content, replies, and learning.
+Goalbar now has a light, Codex-inspired three-pane workbench with a Rust-owned native browser surface, strict remote-webview isolation, explicit semantic capture, policy-gated bounded collection, opaque archive selection, versioned X/LinkedIn/Reddit parsers, provenance-aware SQLite history, and bounded evidence integration for ICP, voice, content, replies, and learning.
 
 ## Delivered
 
@@ -45,7 +45,7 @@ Tagline now has a light, Codex-inspired three-pane workbench with a Rust-owned n
 
 ### Workbench and settings
 
-- Replaced the dark/serif visual direction with the requested light compact workbench while retaining Tagline branding and lime intent accents.
+- Replaced the dark/serif visual direction with the requested light compact workbench while retaining Goalbar branding and lime intent accents.
 - Added native-style titlebar, compact responsive navigation, Browser route, keyboard divider, persisted panel width, reduced-motion behavior, and browser preview mode.
 - Presented the integrated browser/history route before optional official API connections.
 - Added separately confirmed browser-data clearing and history overview in Memory.
@@ -71,10 +71,10 @@ All automated gates passed:
 
 Artifacts:
 
-- `src-tauri/target/debug/bundle/macos/Tagline.app`
-- `src-tauri/target/debug/bundle/dmg/Tagline_0.1.0_aarch64.dmg`
+- `src-tauri/target/debug/bundle/macos/Goalbar.app`
+- `src-tauri/target/debug/bundle/dmg/Goalbar_0.1.0_aarch64.dmg`
 
-The 1440×900 preview route was visually inspected after the automated E2E pass. It matches the planned compact sidebar + conductor + browser structure, has no horizontal overflow, and remains clearly Tagline-branded.
+The 1440×900 preview route was visually inspected after the automated E2E pass. It matches the planned compact sidebar + conductor + browser structure, has no horizontal overflow, and remains clearly Goalbar-branded.
 
 Migrations 1–5 retained their original SHA-256 checksums:
 

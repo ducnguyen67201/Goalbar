@@ -2,7 +2,7 @@
 
 This ledger is an implementation gate, not a hosted-infrastructure requirement. Users connect locally; the APIs still require a registered application and approved scopes.
 
-The integrated browser does not need a Tagline developer application ID. It uses the user’s normal local website session when the site permits the embedded browser engine. This does not grant API access, remove platform restrictions, or authorize bulk automation. Tagline’s shipping website-collection policy is manual-only; use explicit capture or an official archive.
+The integrated browser does not need a Goalbar developer application ID. It uses the user’s normal local website session when the site permits the embedded browser engine. This does not grant API access, remove platform restrictions, or authorize bulk automation. Goalbar’s shipping website-collection policy is manual-only; use explicit capture or an official archive.
 
 | Platform | App type                       | Required access                                                               | OAuth redirect                                 | Pricing/retention                          | Status           |
 | -------- | ------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------ | ---------------- |

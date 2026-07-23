@@ -221,7 +221,7 @@ impl PlatformAdapter for RedditAdapter {
         let form = vec![
             ("api_type".to_owned(), "json".to_owned()),
             ("to".to_owned(), request.recipient_id.clone()),
-            ("subject".to_owned(), "Tagline conversation".to_owned()),
+            ("subject".to_owned(), "Goalbar conversation".to_owned()),
             ("text".to_owned(), request.body.clone()),
             ("raw_json".to_owned(), "1".to_owned()),
         ];

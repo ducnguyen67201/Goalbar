@@ -12,6 +12,7 @@ pub mod error;
 pub mod logging;
 pub mod secrets;
 pub mod services;
+pub mod terminal;
 pub mod validation;
 
 use tauri::Manager as _;
@@ -25,7 +26,7 @@ pub fn run() {
             let default_dir = app.path().app_data_dir()?;
             let data_dir = config::resolve_data_dir(default_dir)
                 .map_err(|error| Box::<dyn std::error::Error>::from(error.to_string()))?;
-            let database_path = data_dir.join("tagline.sqlite");
+            let database_path = data_dir.join("goalbar.sqlite");
             let state = tauri::async_runtime::block_on(app_state::AppState::open(&database_path))
                 .map_err(|error| Box::<dyn std::error::Error>::from(error.to_string()))?;
             services::scheduler::start(state.clone());
@@ -81,13 +82,21 @@ pub fn run() {
             commands::browser::commit_browser_capture,
             commands::browser::start_browser_collection,
             commands::browser::cancel_browser_collection,
+            commands::browser::list_browser_research_findings,
+            commands::browser::list_browser_research_trace,
+            commands::browser::review_browser_research_finding,
             commands::history::choose_history_archive,
             commands::history::preview_history_archive,
             commands::history::import_history_archive,
             commands::history::get_history_overview,
+            commands::terminal::list_terminal_sessions,
+            commands::terminal::create_terminal_session,
+            commands::terminal::write_terminal_session,
+            commands::terminal::resize_terminal_session,
+            commands::terminal::close_terminal_session,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = result {
-        panic!("failed to run Tagline: {error}");
+        panic!("failed to run Goalbar: {error}");
     }
 }

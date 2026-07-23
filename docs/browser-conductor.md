@@ -1,8 +1,8 @@
 # Local research browser
 
-Tagline’s local research browser is a provider-neutral control layer around native Tauri child webviews. The React main webview draws tabs, address controls, capture controls, and progress. Rust creates and positions every remote webview and is the only layer allowed to evaluate the fixed semantic-observation scripts.
+Goalbar’s local research browser is a provider-neutral control layer around native Tauri child webviews. The React main webview draws founder chat, tabs, address controls, tool approval, and progress. Rust creates and positions every remote webview and is the only layer allowed to evaluate the fixed semantic-observation scripts.
 
-“Conductor” is an architectural inspiration only. Tagline does not integrate with or depend on an external Conductor product, SDK, or service.
+“Conductor” is an architectural inspiration only. Goalbar does not integrate with or depend on an external Conductor product, SDK, or service.
 
 ## Security boundary
 
@@ -15,12 +15,13 @@ Tagline’s local research browser is a provider-neutral control layer around na
 ## Operating loop
 
 1. The user navigates and signs in locally.
-2. The user chooses visible capture or selects exact text.
-3. Rust observes a bounded semantic snapshot and normalizes it with an X, Reddit, or LinkedIn adapter.
-4. Tagline displays a preview and explicit `own`/`reference` ownership.
-5. On confirmation, SQLite stores only normalized items and provenance.
-6. Codex or Claude may reason over a bounded purpose-specific excerpt, never the website session.
+2. The user asks the persistent founder chat a question.
+3. When current evidence is required, chat proposes the Research add-on with an explicit objective, ownership, and hard limits.
+4. Only after confirmation does Rust observe a bounded semantic snapshot and normalize it with an X, Reddit, or LinkedIn adapter.
+5. For the confirmed research run, Codex or Claude receives the normalized observation plus bounded, previously approved ICP context.
+6. The structured decision may propose grounded findings and choose one fixed scroll or stop. Rust rejects evidence excerpts that are not present in the visible observation.
+7. Proposed findings return to chat in a review queue. Only explicit acceptance adds them to future ICP context.
 
-Bounded deterministic scrolling and checkpoints are implemented, but the shipping platform policy is `manual_only` for all three websites. This is deliberate: local execution does not make website automation permitted or reliable. Official archives are the correct bootstrap for the user’s own complete history.
+Bounded read-only scrolling and checkpoints are enabled only after the user confirms the objective and hard item/step limits. Local execution does not make website automation universally permitted or reliable, so runs stop on login, verification, host changes, or uncertainty. Official archives remain the correct bootstrap for the user’s own complete history.
 
-Browser-assisted publishing stops at an exact copy action. Tagline provides no action that clicks final Publish, Send, purchase, delete, permission, or account-management controls.
+Browser-assisted publishing stops at an exact copy action. Goalbar provides no action that clicks final Publish, Send, purchase, delete, permission, or account-management controls.

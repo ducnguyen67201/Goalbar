@@ -8,3 +8,4 @@ pub mod inbox;
 pub mod onboarding;
 pub mod platforms;
 pub mod settings;
+pub mod terminal;

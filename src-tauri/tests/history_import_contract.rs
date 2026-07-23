@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use tagline_lib::adapters::history::{HistoryParserRegistry, file_fingerprint};
-use tagline_lib::db::Database;
-use tagline_lib::db::repositories::history::HistoryRepository;
-use tagline_lib::domain::Platform;
+use goalbar_lib::adapters::history::{HistoryParserRegistry, file_fingerprint};
+use goalbar_lib::db::Database;
+use goalbar_lib::db::repositories::history::HistoryRepository;
+use goalbar_lib::domain::Platform;
 use uuid::Uuid;
 
 fn fixture(name: &str) -> PathBuf {

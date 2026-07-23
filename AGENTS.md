@@ -1,4 +1,4 @@
-# Tagline engineering contract
+# Goalbar engineering contract
 
 - Keep the product local-first. Do not add a hosted service or telemetry without an explicit decision.
 - Rust owns persistence, credentials, OAuth, platform I/O, child processes, deterministic scoring, and external writes.

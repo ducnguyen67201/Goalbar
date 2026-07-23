@@ -1,12 +1,21 @@
 import { expect, test } from "@playwright/test"
 
-test("browser workbench exposes bounded local controls in preview mode", async ({ page }) => {
+test("browser workbench defaults to chat and exposes research as an approved add-on", async ({ page }) => {
   await page.goto("/browser")
-  await expect(page.getByRole("heading", { name: "Research without switching." })).toBeVisible()
-  await expect(page.getByRole("heading", { name: "Integrated browser preview" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Preview visible" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Check policy and start" })).toBeVisible()
-  await expect(page.getByRole("button", { name: /publish|send/i })).toHaveCount(0)
+  await expect(page.getByRole("heading", { name: "Chat with the browser beside you." })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Founder chat" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Where do you want to research?" })).toBeVisible()
+  await expect(page.getByRole("button", { name: /research chat callable/i })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Local agent terminals" })).toHaveCount(0)
+  await expect(
+    page.getByRole("button", { name: /^(publish|publish approved text|send reply)$/i }),
+  ).toHaveCount(0)
+
+  await page.getByRole("button", { name: /open x/i }).click()
+  await page.getByRole("textbox", { name: "Chat message" }).fill("Research this page for ICP signals")
+  await page.getByRole("button", { name: "Send message" }).click()
+  await expect(page.getByText("Research add-on requested")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Run approved research" })).toBeDisabled()
 
   const address = page.getByRole("textbox", { name: "Browser address" })
   await address.fill("reddit.com/r/startups")

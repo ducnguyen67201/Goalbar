@@ -121,6 +121,7 @@ export function BrowserToolbar({
         </Button>
         <Input
           aria-label="Browser address"
+          name="browserAddress"
           value={address}
           onChange={(event) => setAddress(event.target.value)}
           placeholder="Enter an X, Reddit, or LinkedIn URL"

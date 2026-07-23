@@ -4,9 +4,10 @@ use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::browser::extraction;
+use crate::db::repositories::research::ResearchRepository;
 use crate::domain::browser::{
-    BrowserBounds, BrowserCapturePreview, BrowserObservation, BrowserRunLimits, BrowserRunProgress,
-    BrowserTab,
+    BrowserBounds, BrowserCapturePreview, BrowserObservation, BrowserResearchTrace,
+    BrowserRunLimits, BrowserRunProgress, BrowserTab, ResearchFindingStatus, StoredResearchFinding,
 };
 use crate::domain::history::{ActivityOwnership, HistoryImportResult};
 use crate::error::{AppError, CommandError};
@@ -249,15 +250,19 @@ pub async fn preview_browser_capture(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<BrowserCapturePreview, CommandError> {
-    BrowserConductorService::new(state.browser.clone(), state.database.pool().clone())
-        .preview_capture(
-            &app,
-            parse_uuid(&input.tab_id)?,
-            CaptureMode::parse(&input.mode).map_err(CommandError::from)?,
-            parse_ownership(&input.ownership)?,
-        )
-        .await
-        .map_err(CommandError::from)
+    BrowserConductorService::new(
+        state.browser.clone(),
+        state.database.pool().clone(),
+        state.conductor.clone(),
+    )
+    .preview_capture(
+        &app,
+        parse_uuid(&input.tab_id)?,
+        CaptureMode::parse(&input.mode).map_err(CommandError::from)?,
+        parse_ownership(&input.ownership)?,
+    )
+    .await
+    .map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -266,15 +271,19 @@ pub async fn commit_browser_capture(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<HistoryImportResult, CommandError> {
-    BrowserConductorService::new(state.browser.clone(), state.database.pool().clone())
-        .commit_capture(
-            &app,
-            parse_uuid(&input.tab_id)?,
-            CaptureMode::parse(&input.mode).map_err(CommandError::from)?,
-            parse_ownership(&input.ownership)?,
-        )
-        .await
-        .map_err(CommandError::from)
+    BrowserConductorService::new(
+        state.browser.clone(),
+        state.database.pool().clone(),
+        state.conductor.clone(),
+    )
+    .commit_capture(
+        &app,
+        parse_uuid(&input.tab_id)?,
+        CaptureMode::parse(&input.mode).map_err(CommandError::from)?,
+        parse_ownership(&input.ownership)?,
+    )
+    .await
+    .map_err(CommandError::from)
 }
 
 #[derive(Debug, Deserialize)]
@@ -296,17 +305,21 @@ pub async fn start_browser_collection(
     let objective = crate::validation::require_non_empty(&input.objective, "objective", 1_000)
         .map_err(CommandError::from)?;
     validate_browser_run_limits(&input.limits).map_err(CommandError::from)?;
-    BrowserConductorService::new(state.browser.clone(), state.database.pool().clone())
-        .collect(
-            &app,
-            parse_uuid(&input.tab_id)?,
-            &objective,
-            input.limits,
-            parse_ownership(&input.ownership)?,
-            input.provider.as_deref(),
-        )
-        .await
-        .map_err(CommandError::from)
+    BrowserConductorService::new(
+        state.browser.clone(),
+        state.database.pool().clone(),
+        state.conductor.clone(),
+    )
+    .collect(
+        &app,
+        parse_uuid(&input.tab_id)?,
+        &objective,
+        input.limits,
+        parse_ownership(&input.ownership)?,
+        input.provider.as_deref(),
+    )
+    .await
+    .map_err(CommandError::from)
 }
 
 #[derive(Debug, Deserialize)]
@@ -320,7 +333,59 @@ pub async fn cancel_browser_collection(
     input: CancelBrowserCollectionInput,
     state: State<'_, AppState>,
 ) -> Result<bool, CommandError> {
-    Ok(state.browser.cancel_run(parse_uuid(&input.run_id)?))
+    let run_id = parse_uuid(&input.run_id)?;
+    let browser_cancelled = state.browser.cancel_run(run_id);
+    let agent_cancelled = state.conductor.cancel(run_id);
+    Ok(browser_cancelled || agent_cancelled)
+}
+
+#[tauri::command]
+pub async fn list_browser_research_findings(
+    input: CancelBrowserCollectionInput,
+    state: State<'_, AppState>,
+) -> Result<Vec<StoredResearchFinding>, CommandError> {
+    ResearchRepository::new(state.database.pool().clone())
+        .list_findings(parse_uuid(&input.run_id)?)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn list_browser_research_trace(
+    input: CancelBrowserCollectionInput,
+    state: State<'_, AppState>,
+) -> Result<Vec<BrowserResearchTrace>, CommandError> {
+    ResearchRepository::new(state.database.pool().clone())
+        .list_trace(parse_uuid(&input.run_id)?)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviewBrowserResearchFindingInput {
+    pub finding_id: String,
+    pub status: String,
+}
+
+#[tauri::command]
+pub async fn review_browser_research_finding(
+    input: ReviewBrowserResearchFindingInput,
+    state: State<'_, AppState>,
+) -> Result<StoredResearchFinding, CommandError> {
+    let status = match input.status.as_str() {
+        "accepted" => ResearchFindingStatus::Accepted,
+        "rejected" => ResearchFindingStatus::Rejected,
+        _ => {
+            return Err(CommandError::from(AppError::Validation(
+                "finding review status must be accepted or rejected".to_owned(),
+            )));
+        }
+    };
+    ResearchRepository::new(state.database.pool().clone())
+        .review(parse_uuid(&input.finding_id)?, status)
+        .await
+        .map_err(CommandError::from)
 }
 
 fn parse_uuid(value: &str) -> Result<Uuid, CommandError> {

@@ -154,3 +154,125 @@ pub enum BrowserAction {
     RequestUserAction { reason: String, recovery: String },
     Stop { summary: String },
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchFindingCategory {
+    Pain,
+    Goal,
+    Objection,
+    Language,
+    Trigger,
+    ContentTheme,
+    CounterEvidence,
+}
+
+impl ResearchFindingCategory {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pain => "pain",
+            Self::Goal => "goal",
+            Self::Objection => "objection",
+            Self::Language => "language",
+            Self::Trigger => "trigger",
+            Self::ContentTheme => "content_theme",
+            Self::CounterEvidence => "counter_evidence",
+        }
+    }
+
+    pub fn parse(value: &str) -> crate::error::AppResult<Self> {
+        match value {
+            "pain" => Ok(Self::Pain),
+            "goal" => Ok(Self::Goal),
+            "objection" => Ok(Self::Objection),
+            "language" => Ok(Self::Language),
+            "trigger" => Ok(Self::Trigger),
+            "content_theme" => Ok(Self::ContentTheme),
+            "counter_evidence" => Ok(Self::CounterEvidence),
+            _ => Err(crate::error::AppError::Internal(format!(
+                "unknown research finding category: {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchFindingStatus {
+    Proposed,
+    Accepted,
+    Rejected,
+}
+
+impl ResearchFindingStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+        }
+    }
+
+    pub fn parse(value: &str) -> crate::error::AppResult<Self> {
+        match value {
+            "proposed" => Ok(Self::Proposed),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            _ => Err(crate::error::AppError::Internal(format!(
+                "unknown research finding status: {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResearchFindingDraft {
+    pub category: ResearchFindingCategory,
+    pub summary: String,
+    pub evidence_excerpt: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BrowserResearchAction {
+    Scroll,
+    Finish { reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrowserResearchDecision {
+    pub summary: String,
+    pub findings: Vec<ResearchFindingDraft>,
+    pub action: BrowserResearchAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredResearchFinding {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub platform: Platform,
+    pub category: ResearchFindingCategory,
+    pub summary: String,
+    pub evidence_excerpt: String,
+    pub source_url: String,
+    pub confidence: f64,
+    pub status: ResearchFindingStatus,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserResearchTrace {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub step: u32,
+    pub action: String,
+    pub message: String,
+    pub url: String,
+    pub created_at: String,
+}

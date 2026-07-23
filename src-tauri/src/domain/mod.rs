@@ -8,6 +8,7 @@ pub mod icp;
 pub mod job;
 pub mod metrics;
 pub mod relationship;
+pub mod terminal;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

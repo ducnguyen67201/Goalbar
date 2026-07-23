@@ -64,7 +64,7 @@ impl BrowserManager {
             let state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
             if state.tabs.len() >= MAX_BROWSER_TABS {
                 return Err(AppError::Validation(format!(
-                    "Tagline supports at most {MAX_BROWSER_TABS} browser tabs"
+                    "Goalbar supports at most {MAX_BROWSER_TABS} browser tabs"
                 )));
             }
         }

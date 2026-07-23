@@ -10,6 +10,7 @@ use crate::db::Database;
 use crate::error::AppResult;
 use crate::secrets::{OsSecretStore, SecretStore};
 use crate::services::history::HistorySelectionManager;
+use crate::terminal::TerminalManager;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -20,6 +21,7 @@ pub struct AppState {
     pub oauth: OAuthManager,
     pub browser: BrowserManager,
     pub history_selections: HistorySelectionManager,
+    pub terminals: TerminalManager,
     pub secrets: Arc<dyn SecretStore>,
 }
 
@@ -35,6 +37,7 @@ impl AppState {
             oauth: OAuthManager::default(),
             browser: BrowserManager::default(),
             history_selections: HistorySelectionManager::default(),
+            terminals: TerminalManager::default(),
             secrets: Arc::new(OsSecretStore),
         })
     }
@@ -51,6 +54,7 @@ impl AppState {
             oauth: OAuthManager::default(),
             browser: BrowserManager::default(),
             history_selections: HistorySelectionManager::default(),
+            terminals: TerminalManager::default(),
             secrets: Arc::new(crate::secrets::MemorySecretStore::default()),
         })
     }

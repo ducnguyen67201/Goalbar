@@ -21,7 +21,7 @@ pub struct HttpResponse {
 impl HttpTransport {
     pub fn production() -> Self {
         let client = reqwest::Client::builder()
-            .user_agent("tagline/0.1.0")
+            .user_agent("goalbar/0.1.0")
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .build()

@@ -24,7 +24,7 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
     tokio::fs::create_dir_all(&directory).await?;
     let created_at = Utc::now();
     let path = directory.join(format!(
-        "tagline-{}.json",
+        "goalbar-{}.json",
         created_at.format("%Y%m%d-%H%M%S")
     ));
     let founder = json_array(
@@ -99,7 +99,7 @@ pub async fn backup_database(state: &AppState) -> AppResult<DataArtifact> {
     tokio::fs::create_dir_all(&directory).await?;
     let created_at = Utc::now();
     let path = directory.join(format!(
-        "tagline-{}.sqlite",
+        "goalbar-{}.sqlite",
         created_at.format("%Y%m%d-%H%M%S")
     ));
     sqlx::query("VACUUM INTO ?")

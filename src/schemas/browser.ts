@@ -118,6 +118,43 @@ export const browserRunProgressSchema = z
   })
   .strict()
 
+export const researchFindingCategorySchema = z.enum([
+  "pain",
+  "goal",
+  "objection",
+  "language",
+  "trigger",
+  "content_theme",
+  "counter_evidence",
+])
+export const researchFindingStatusSchema = z.enum(["proposed", "accepted", "rejected"])
+export const storedResearchFindingSchema = z
+  .object({
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    platform: platformSchema,
+    category: researchFindingCategorySchema,
+    summary: z.string(),
+    evidenceExcerpt: z.string(),
+    sourceUrl: z.string().url(),
+    confidence: z.number().min(0).max(1),
+    status: researchFindingStatusSchema,
+    createdAt: z.string().datetime({ offset: true }),
+    updatedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+export const browserResearchTraceSchema = z
+  .object({
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    step: z.number().int().nonnegative(),
+    action: z.enum(["observe", "scroll", "finish", "pause", "error"]),
+    message: z.string(),
+    url: z.string().url(),
+    createdAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+
 export const createBrowserTabInputSchema = z
   .object({
     url: z.string().url(),
@@ -146,6 +183,12 @@ export const startBrowserCollectionInputSchema = z
   })
   .strict()
 export const cancelBrowserCollectionInputSchema = z.object({ runId: z.string().uuid() }).strict()
+export const reviewBrowserResearchFindingInputSchema = z
+  .object({
+    findingId: z.string().uuid(),
+    status: z.enum(["accepted", "rejected"]),
+  })
+  .strict()
 export const clearBrowserDataInputSchema = z
   .object({ confirmation: z.literal("CLEAR BROWSER DATA") })
   .strict()
@@ -157,3 +200,5 @@ export type BrowserTab = z.infer<typeof browserTabSchema>
 export type BrowserCapturePreview = z.infer<typeof browserCapturePreviewSchema>
 export type BrowserRunProgress = z.infer<typeof browserRunProgressSchema>
 export type BrowserCaptureInput = z.infer<typeof browserCaptureInputSchema>
+export type StoredResearchFinding = z.infer<typeof storedResearchFindingSchema>
+export type BrowserResearchTrace = z.infer<typeof browserResearchTraceSchema>

@@ -147,7 +147,7 @@ export function MemoryPage() {
           </div>
           {!history.data?.itemCount && (
             <p className="muted-copy">
-              Import an account archive or save an explicit browser capture to teach Tagline from evidence.
+              Import an account archive or save an explicit browser capture to teach Goalbar from evidence.
             </p>
           )}
         </section>

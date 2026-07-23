@@ -4,7 +4,7 @@ test("main command-center routes are reachable", async ({ page }) => {
   await page.goto("/")
   await expect(page.getByText("Local only")).toBeVisible()
   await page.getByRole("link", { name: "Browser" }).click()
-  await expect(page.getByRole("heading", { name: /research without switching/i })).toBeVisible()
+  await expect(page.getByRole("heading", { name: /chat with the browser beside you/i })).toBeVisible()
   await page.getByRole("link", { name: "Settings" }).click()
   await expect(page.getByRole("heading", { name: /connections without credential custody/i })).toBeVisible()
   await page.getByRole("link", { name: "Growth", exact: true }).click()

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
-use tagline_lib::adapters::agent::jsonl::{
+use goalbar_lib::adapters::agent::jsonl::{
     find_final_text, parse_json_lines, parse_structured_text,
 };
 

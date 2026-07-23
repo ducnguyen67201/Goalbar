@@ -1,13 +1,13 @@
 #![allow(clippy::unwrap_used)]
 
-use tagline_lib::adapters::platform::http::HttpTransport;
-use tagline_lib::adapters::platform::linkedin::LinkedInAdapter;
-use tagline_lib::adapters::platform::reddit::RedditAdapter;
-use tagline_lib::adapters::platform::x::XAdapter;
-use tagline_lib::adapters::platform::{
+use goalbar_lib::adapters::platform::http::HttpTransport;
+use goalbar_lib::adapters::platform::linkedin::LinkedInAdapter;
+use goalbar_lib::adapters::platform::reddit::RedditAdapter;
+use goalbar_lib::adapters::platform::x::XAdapter;
+use goalbar_lib::adapters::platform::{
     DirectMessageRequest, PlatformAdapter, PlatformRequestContext, PublishRequest,
 };
-use tagline_lib::domain::{CapabilityState, Platform};
+use goalbar_lib::domain::{CapabilityState, Platform};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -65,7 +65,7 @@ async fn reddit_contract_requires_destination() {
         .await;
     assert!(matches!(
         result,
-        Err(tagline_lib::error::AppError::Validation(_))
+        Err(goalbar_lib::error::AppError::Validation(_))
     ));
 }
 
@@ -92,6 +92,6 @@ async fn linkedin_contract_is_honest_about_direct_messages() {
         .await;
     assert!(matches!(
         result,
-        Err(tagline_lib::error::AppError::Unsupported(_))
+        Err(goalbar_lib::error::AppError::Unsupported(_))
     ));
 }

@@ -4,13 +4,13 @@
 
 ## Summary
 
-Turn Tagline into a light, Codex-inspired desktop workbench with an integrated local browser for X, Reddit, and LinkedIn, while preserving Tagline’s identity and local-first security model. Add a provider-neutral Browser Conductor that lets the existing Codex or Claude CLI adapters reason over bounded semantic page observations, captures only normalized user-approved content, and never gives remote pages access to Tauri IPC, secrets, or external-write commands.
+Turn Goalbar into a light, Codex-inspired desktop workbench with an integrated local browser for X, Reddit, and LinkedIn, while preserving Goalbar’s identity and local-first security model. Add a provider-neutral Browser Conductor that lets the existing Codex or Claude CLI adapters reason over bounded semantic page observations, captures only normalized user-approved content, and never gives remote pages access to Tauri IPC, secrets, or external-write commands.
 
 Bootstrap the founder’s complete personal history through official X, LinkedIn, and Reddit archive imports. Use browser collection only as a bounded, user-initiated supplement for recent or explicitly selected content; do not claim that browser scrolling can produce a complete or platform-approved history.
 
 ## User Story
 
-As a solo founder, I want to browse my social channels, import my historical activity, and work with Codex or Claude from one local workspace, so that Tagline can learn my voice and ICP without forcing me to switch applications, create a hosted account, or hand credentials to a third party.
+As a solo founder, I want to browse my social channels, import my historical activity, and work with Codex or Claude from one local workspace, so that Goalbar can learn my voice and ICP without forcing me to switch applications, create a hosted account, or hand credentials to a third party.
 
 ## Problem → Solution
 
@@ -26,7 +26,7 @@ The current dark dashboard opens platform authentication externally, requires de
 ## Metadata
 
 - **Complexity**: XL
-- **Source PRD**: N/A — standalone feature based on `FOUNDER_GROWTH_LAB.md`
+- **Source PRD**: N/A — standalone feature based on `README.md`
 - **PRD Phase**: N/A
 - **Estimated Files**: 45–55
 - **Estimated Tasks**: 13
@@ -38,11 +38,11 @@ The current dark dashboard opens platform authentication externally, requires de
 
 ## Product Decisions
 
-### Decision 1: Tagline owns the browser bridge
+### Decision 1: Goalbar owns the browser bridge
 
-Do not attempt to call private or undocumented Browser/Computer Use APIs from the Codex desktop app. The current Tagline integration starts `codex exec` or `claude` as local child processes, and the documented Codex built-in browser is not available in Codex CLI.
+Do not attempt to call private or undocumented Browser/Computer Use APIs from the Codex desktop app. The current Goalbar integration starts `codex exec` or `claude` as local child processes, and the documented Codex built-in browser is not available in Codex CLI.
 
-Tagline will own:
+Goalbar will own:
 
 - child-webview lifecycle and geometry;
 - URL and navigation policy;
@@ -94,7 +94,7 @@ This avoids risky table rebuilds and allows API, archive, and browser records to
 
 MVP behavior:
 
-- Tagline generates the draft beside the browser.
+- Goalbar generates the draft beside the browser.
 - The exact approved draft can be copied.
 - The user manually pastes and clicks Publish/Send.
 - `fillDraft` exists as a typed capability but is not enabled for a platform unless its current policy/access state permits non-API assistance.
@@ -116,7 +116,7 @@ Use:
 - compact system sans-serif typography;
 - flat panels with 10–14 px radii;
 - active navigation with a quiet gray fill;
-- Tagline lime only for status, progress, and primary intent;
+- Goalbar lime only for status, progress, and primary intent;
 - very limited shadows, reserved for overlays and transient notifications;
 - a transparent/overlay macOS title bar with native traffic lights;
 - preserved native window decorations on Windows and Linux.
@@ -160,7 +160,7 @@ Do not use:
 │              │                                               │
 │ Today        │ Settings → developer client IDs → OAuth      │
 │ Create       │                                               │
-│ Inbox        │ Browser opens outside Tagline                │
+│ Inbox        │ Browser opens outside Goalbar                │
 │ Growth       │ No archive/history import                    │
 │ Memory       │ No browser capture                           │
 │ Settings     │                                               │
@@ -171,9 +171,9 @@ Do not use:
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
-│ Native/overlay title bar · Tagline · route title · local status    │
+│ Native/overlay title bar · Goalbar · route title · local status    │
 ├──────────────┬───────────────────────────────────────────────────────┤
-│ Tagline      │ Compact route header                                │
+│ Goalbar      │ Compact route header                                │
 │              ├───────────────────────────────────────────────────────┤
 │ Today        │ Existing product page restyled with flat surfaces   │
 │ Browser      │                                                       │
@@ -190,7 +190,7 @@ Do not use:
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Native/overlay title bar · Tagline · Browser · Local session               │
+│ Native/overlay title bar · Goalbar · Browser · Local session               │
 ├────────────┬────────────────────────────┬─────────────────────────────────────┤
 │ Navigation │ Browser Conductor          │ Browser tabs                       │
 │            │                            ├─────────────────────────────────────┤
@@ -326,7 +326,7 @@ Do not persist:
 - raw HTML;
 - full page screenshots;
 - arbitrary page scripts;
-- private browser history beyond user-approved Tagline captures.
+- private browser history beyond user-approved Goalbar captures.
 
 The OS webview profile retains website session data. “Clear browser data” calls Tauri’s webview browsing-data API and requires confirmation.
 
@@ -568,7 +568,7 @@ Files that MUST be read before implementing:
 | P1       | `src-tauri/tests/agent_contract.rs`                 |                                                 all | Agent contract test style                                             |
 | P1       | `src-tauri/tests/platform_contract.rs`              |                                                 all | Adapter contract test style                                           |
 | P1       | `e2e/navigation.spec.ts`                            |                                                 all | Browser-level navigation test style                                   |
-| P2       | `FOUNDER_GROWTH_LAB.md`                             | product loop, ICP, voice, history-relevant sections | Product intent                                                        |
+| P2       | `README.md`                                         | product loop, ICP, voice, history-relevant sections | Product intent                                                        |
 | P2       | `docs/architecture.md`                              |                                                 all | Existing system boundary statement                                    |
 | P2       | `docs/capability-matrix.md`                         |                                                 all | Honest platform capability states                                     |
 | P2       | `docs/platform-access.md`                           |                                                 all | Official API access remains a separate path                           |
@@ -943,7 +943,7 @@ The exact split may be adjusted when a module becomes too large, but implementat
 ## NOT Building
 
 - Reuse or reverse engineering of Codex desktop’s private Browser implementation.
-- A hosted browser, proxy, telemetry service, or Tagline cloud account.
+- A hosted browser, proxy, telemetry service, or Goalbar cloud account.
 - Full Chrome embedding, Chrome extensions, password-manager import, or normal-browser profile theft.
 - A promise to collect an entire feed/account history through scrolling.
 - Background or unattended platform scraping.
@@ -991,7 +991,7 @@ The exact split may be adjusted when a module becomes too large, but implementat
   - disallowed schemes fail with typed recovery;
   - child view hides cleanly when leaving `/browser`.
 
-### Task 2: Replace the dark shell with the Codex-inspired Tagline workbench
+### Task 2: Replace the dark shell with the Codex-inspired Goalbar workbench
 
 - **ACTION**: Apply the light structural redesign across the application.
 - **IMPLEMENT**:
@@ -1017,7 +1017,7 @@ The exact split may be adjusted when a module becomes too large, but implementat
   - keyboard focus is visible;
   - no horizontal overflow at 960, 1280, 1440, and 1920 px;
   - light-theme contrast is acceptable;
-  - screenshot comparison is structurally similar to the reference while clearly branded Tagline.
+  - screenshot comparison is structurally similar to the reference while clearly branded Goalbar.
 
 ### Task 3: Define strict browser and history contracts
 
@@ -1045,7 +1045,7 @@ The exact split may be adjusted when a module becomes too large, but implementat
 - **IMPLEMENT**:
   - create, list, activate, navigate, reload, back, forward, show, hide, close, and clear-data commands;
   - cap browser tabs at 5;
-  - share local website session data while keeping Tagline data separate;
+  - share local website session data while keeping Goalbar data separate;
   - use a `ResizeObserver` and `requestAnimationFrame` coalescing to send logical bounds;
   - update URL/title/load state from Rust events;
   - keep the address bar honest during redirects;
@@ -1253,7 +1253,7 @@ The exact split may be adjusted when a module becomes too large, but implementat
 - **MIRROR**: Current README and docs tone; current `DataSettings`.
 - **IMPORTS**: None beyond existing UI controls.
 - **GOTCHA**:
-  - clearing Tagline data and clearing browser data are distinct operations;
+  - clearing Goalbar data and clearing browser data are distinct operations;
   - factory reset must clear browser data only when explicitly confirmed;
   - JSON export excludes cookies, tokens, selection paths, and raw archive.
 - **VALIDATE**:
@@ -1436,11 +1436,11 @@ EXPECT: Existing rows survive migration 6; fixture imports are idempotent.
 ### Manual Tauri Validation
 
 - [ ] Start `pnpm tauri dev`.
-- [ ] Confirm light Tagline workbench and native titlebar behavior.
+- [ ] Confirm light Goalbar workbench and native titlebar behavior.
 - [ ] Open Browser and load X, Reddit, and LinkedIn.
 - [ ] Confirm URL remains visible through redirects.
 - [ ] Sign in manually; restart app; verify expected local session persistence.
-- [ ] Confirm remote page cannot invoke a Tagline Tauri command.
+- [ ] Confirm remote page cannot invoke a Goalbar Tauri command.
 - [ ] Resize the window and divider repeatedly; verify browser bounds.
 - [ ] Switch routes; verify remote webview hides immediately.
 - [ ] Capture explicit selection and preview normalized content.
@@ -1457,7 +1457,7 @@ EXPECT: Existing rows survive migration 6; fixture imports are idempotent.
 
 ## Acceptance Criteria
 
-- [ ] Tagline uses the documented light, Codex-inspired workbench structure while retaining Tagline branding.
+- [ ] Goalbar uses the documented light, Codex-inspired workbench structure while retaining Goalbar branding.
 - [ ] `/browser` displays a React browser toolbar and an integrated native child webview.
 - [ ] X, Reddit, and LinkedIn can be browsed and signed into locally when their sites permit the embedded engine.
 - [ ] Remote child webviews match no Tauri capability and cannot invoke application commands.

@@ -371,7 +371,7 @@ async fn handle_callback(
                 html_response(
                     401,
                     "Connection rejected",
-                    "The OAuth state did not match. Return to Tagline and try again.",
+                    "The OAuth state did not match. Return to Goalbar and try again.",
                 )
             } else if let Some(error) = values.get("error") {
                 item.status = OAuthStatus::Failed;
@@ -387,7 +387,7 @@ async fn handle_callback(
                 html_response(
                     200,
                     "Account connected",
-                    "Return to Tagline to finish the connection. You can close this window.",
+                    "Return to Goalbar to finish the connection. You can close this window.",
                 )
             } else {
                 item.status = OAuthStatus::Failed;
@@ -402,7 +402,7 @@ async fn handle_callback(
             html_response(
                 404,
                 "Connection expired",
-                "Tagline no longer has this OAuth session.",
+                "Goalbar no longer has this OAuth session.",
             )
         }
     } else {

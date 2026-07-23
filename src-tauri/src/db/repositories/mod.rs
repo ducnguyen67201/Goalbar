@@ -7,3 +7,4 @@ pub mod job;
 pub mod metrics;
 pub mod platform;
 pub mod relationship;
+pub mod research;

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
-use tagline_lib::db::Database;
+use goalbar_lib::db::Database;
 
 #[tokio::test]
 async fn migration_schema_enforces_platform_enum() {
@@ -35,4 +35,16 @@ async fn migration_six_adds_history_tables_without_changing_operational_data() {
         .expect("preserved operational record");
     assert_eq!(tables, 4);
     assert_eq!(setting, r#"{"preserved":true}"#);
+}
+
+#[tokio::test]
+async fn migration_seven_adds_staged_research_without_changing_operational_data() {
+    let database = Database::in_memory().await.expect("database");
+    let tables: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('browser_research_trace', 'browser_research_findings')",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("research tables");
+    assert_eq!(tables, 2);
 }

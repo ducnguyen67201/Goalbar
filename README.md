@@ -1,18 +1,18 @@
-# Tagline
+# Goalbar
 
 A local-first growth operating system for solo founders. It connects to an existing Codex or Claude Code CLI, keeps durable product memory in local SQLite, and puts a controlled X, Reddit, and LinkedIn browser beside the founder’s content, ICP, inbox, and learning workflows.
 
 ## Local research browser
 
-The desktop app includes an integrated browser with a React toolbar and Rust-owned native child webviews. Users sign into platform websites on their own machine. Tagline can preview and normalize explicitly selected or visible content, but it never returns cookies, passwords, tokens, raw HTML, or arbitrary JavaScript to React or an agent.
+The desktop app includes an integrated browser with a React toolbar and Rust-owned native child webviews. Users sign into platform websites on their own machine. Goalbar can preview and normalize explicitly selected or visible content, but it never returns cookies, passwords, tokens, raw HTML, or arbitrary JavaScript to React or an agent.
 
-For the user’s own historical record, import the official X, LinkedIn, or Reddit account archive. Archive import is the completeness path; browser capture is a bounded supplement for recent evidence and ICP research. Automated website collection currently reports a manual-only policy state for all three platforms.
+For the user’s own historical record, import the official X, LinkedIn, or Reddit account archive. Archive import is the completeness path; browser capture is a bounded supplement for recent evidence and ICP research. A confirmed research run can ask the selected local Codex or Claude CLI to interpret normalized visible evidence and choose between one fixed scroll or stopping. It cannot click, message, publish, or access the website session.
 
-See [local research browser](docs/browser-conductor.md) and [history import](docs/history-import.md).
+Founder chat sits beside the browser and can request bounded research through an explicit approval step. Optional interactive shell, Codex, and Claude terminal infrastructure remains available for future developer workflows. See [agent workbench](docs/agent-workbench.md), [local research browser](docs/browser-conductor.md), and [history import](docs/history-import.md).
 
 ## Privacy model
 
-- No Tagline cloud account or backend.
+- No Goalbar cloud account or backend.
 - Website login can happen inside the local integrated browser. Those website sessions remain in its local browser profile.
 - Optional API login happens in the official system-browser consent page.
 - OAuth returns to a temporary `127.0.0.1` listener on the same machine.
@@ -29,7 +29,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-No `.env` is required. Optional diagnostics: `RUST_LOG` and `TAGLINE_HOME`.
+No `.env` is required. Optional diagnostics: `RUST_LOG` and `GOALBAR_HOME`.
 
 ## Validation
 
@@ -53,7 +53,7 @@ Live API tests are opt-in and require approved developer applications and dedica
 
 ## Current platform boundary
 
-- Browser: local sign-in, navigation, explicit preview/capture, and manual copy/paste publishing when the website permits the embedded engine.
+- Browser: local sign-in, navigation, explicit preview/capture, bounded read-only research, and manual copy/paste publishing when the website permits the embedded engine.
 - History: versioned, tolerant official-archive import with provenance, idempotency, and bounded downstream context.
 - Official APIs: remain optional for stable posting, sync, replies, and metrics where an app has current approval.
 

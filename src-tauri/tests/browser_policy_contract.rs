@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used)]
 
-use tagline_lib::browser::policy::{browser_url, collection_policy, platform_from_url};
-use tagline_lib::domain::Platform;
-use tagline_lib::domain::browser::BrowserPolicyState;
+use goalbar_lib::browser::policy::{browser_url, collection_policy, platform_from_url};
+use goalbar_lib::domain::Platform;
+use goalbar_lib::domain::browser::BrowserPolicyState;
 
 #[test]
 fn navigation_policy_rejects_unsafe_and_deceptive_urls() {
@@ -23,9 +23,12 @@ fn navigation_policy_rejects_unsafe_and_deceptive_urls() {
 }
 
 #[test]
-fn automated_collection_defaults_to_manual_only() {
+fn bounded_read_only_research_requires_the_explicit_collection_path() {
     for platform in [Platform::X, Platform::Reddit, Platform::Linkedin] {
-        assert_eq!(collection_policy(platform), BrowserPolicyState::ManualOnly);
+        assert_eq!(
+            collection_policy(platform),
+            BrowserPolicyState::BoundedCollection
+        );
     }
 }
 
@@ -36,4 +39,36 @@ fn remote_browser_labels_receive_no_tauri_capability() {
     assert_eq!(capability["webviews"], serde_json::json!(["main"]));
     assert!(!manifest.contains("browser-*"));
     assert!(capability.get("windows").is_none());
+}
+
+#[test]
+fn main_window_launches_maximized_and_remains_resizable() {
+    for (name, config) in [
+        ("base", include_str!("../tauri.conf.json")),
+        ("macOS", include_str!("../tauri.macos.conf.json")),
+    ] {
+        let config: serde_json::Value = serde_json::from_str(config).expect("Tauri config JSON");
+        let main_window = &config["app"]["windows"][0];
+
+        assert_eq!(
+            main_window["title"],
+            serde_json::json!("Goalbar"),
+            "{name} title"
+        );
+        assert_eq!(
+            main_window["maximized"],
+            serde_json::json!(true),
+            "{name} maximize"
+        );
+        assert_eq!(
+            main_window["resizable"],
+            serde_json::json!(true),
+            "{name} resize"
+        );
+        assert_eq!(
+            main_window["fullscreen"],
+            serde_json::Value::Null,
+            "{name} fullscreen"
+        );
+    }
 }

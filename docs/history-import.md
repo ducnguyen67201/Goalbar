@@ -1,6 +1,6 @@
 # Official history import
 
-Tagline imports the user’s official X, LinkedIn, or Reddit account export into a normalized, provenance-aware local store.
+Goalbar imports the user’s official X, LinkedIn, or Reddit account export into a normalized, provenance-aware local store.
 
 ## Workflow
 

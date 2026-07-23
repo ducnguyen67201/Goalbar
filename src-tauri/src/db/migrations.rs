@@ -41,6 +41,11 @@ const MIGRATIONS: &[EmbeddedMigration] = &[
         name: "browser_history",
         sql: include_str!("../../migrations/0006_browser_history.sql"),
     },
+    EmbeddedMigration {
+        version: 7,
+        name: "agent_research",
+        sql: include_str!("../../migrations/0007_agent_research.sql"),
+    },
 ];
 
 pub async fn run(pool: &SqlitePool) -> AppResult<()> {

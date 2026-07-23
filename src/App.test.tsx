@@ -17,6 +17,7 @@ describe("application shell", () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByText("Build a growth loop you can trust.")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Goalbar home" })).toBeInTheDocument()
     expect(screen.getByText("Local only")).toBeInTheDocument()
   })
 
@@ -31,7 +32,27 @@ describe("application shell", () => {
       </QueryClientProvider>,
     )
     await user.click(screen.getByRole("link", { name: "Browser" }))
-    expect(await screen.findByRole("heading", { name: "Research without switching." })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("heading", { name: "Chat with the browser beside you." }),
+    ).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Integrated browser" })).toBeInTheDocument()
+  })
+
+  it("renders the standalone marketing page and captures a download email locally", async () => {
+    const user = userEvent.setup()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/landing"]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole("link", { name: "Goalbar home" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Your outbound cofounder.", level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Replay the clicks" })).toBeInTheDocument()
+    await user.type(screen.getAllByRole("textbox", { name: "Email address" })[0], "founder@example.com")
+    await user.click(screen.getAllByRole("button", { name: "Email me the download" })[0])
+    expect(screen.getByText("You’re on the download list.")).toBeInTheDocument()
   })
 })

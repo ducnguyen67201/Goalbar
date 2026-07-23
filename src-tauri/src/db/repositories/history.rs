@@ -337,6 +337,37 @@ impl HistoryRepository {
                 "source": row.try_get::<String, _>("display_name")?,
             }));
         }
+        if matches!(purpose, HistoryContextPurpose::Icp) && remaining > 0 {
+            let rows = sqlx::query("SELECT platform, category, summary, evidence_excerpt, source_url, confidence, updated_at FROM browser_research_findings WHERE status = 'accepted' ORDER BY updated_at DESC LIMIT ?")
+                .bind(i64::from(limit.min(100)))
+                .fetch_all(&self.pool)
+                .await?;
+            for row in rows {
+                if remaining == 0 {
+                    break;
+                }
+                let summary: String = row.try_get("summary")?;
+                let evidence: String = row.try_get("evidence_excerpt")?;
+                let combined = format!("{summary}\nEvidence: {evidence}");
+                let excerpt = combined
+                    .chars()
+                    .take(remaining.min(2_000))
+                    .collect::<String>();
+                remaining = remaining.saturating_sub(excerpt.chars().count());
+                excerpts.push(json!({
+                    "platform": row.try_get::<String, _>("platform")?,
+                    "itemKind": "research_finding",
+                    "ownership": "reference",
+                    "category": row.try_get::<String, _>("category")?,
+                    "excerpt": excerpt,
+                    "canonicalUrl": row.try_get::<String, _>("source_url")?,
+                    "publishedAt": row.try_get::<String, _>("updated_at")?,
+                    "sourceKind": "agent_research",
+                    "source": "Accepted browser research",
+                    "confidence": row.try_get::<f64, _>("confidence")?,
+                }));
+            }
+        }
         Ok(json!({
             "schemaVersion": HISTORY_SCHEMA_VERSION,
             "purpose": match purpose {

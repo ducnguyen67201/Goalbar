@@ -14,12 +14,12 @@ const routeTitles: Record<string, string> = {
 
 export function WorkbenchTitlebar() {
   const location = useLocation()
-  const title = routeTitles[location.pathname] ?? "Tagline"
+  const title = routeTitles[location.pathname] ?? "Goalbar"
 
   return (
     <header className="workbench-titlebar" data-tauri-drag-region>
       <span className="titlebar-product" data-tauri-drag-region>
-        Tagline
+        Goalbar
       </span>
       <span className="titlebar-divider" aria-hidden="true" />
       <strong data-tauri-drag-region>{title}</strong>

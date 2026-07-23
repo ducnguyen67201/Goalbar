@@ -48,15 +48,23 @@ fn main() {
         "commit_browser_capture",
         "start_browser_collection",
         "cancel_browser_collection",
+        "list_browser_research_findings",
+        "list_browser_research_trace",
+        "review_browser_research_finding",
         "choose_history_archive",
         "preview_history_archive",
         "import_history_archive",
         "get_history_overview",
+        "list_terminal_sessions",
+        "create_terminal_session",
+        "write_terminal_session",
+        "resize_terminal_session",
+        "close_terminal_session",
     ];
 
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
     )
-    .expect("failed to build Tagline");
+    .expect("failed to build Goalbar");
 }

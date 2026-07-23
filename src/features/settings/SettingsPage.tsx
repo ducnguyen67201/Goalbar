@@ -67,7 +67,7 @@ function AgentSettings({
         </span>
         <div>
           <h2>Reasoning engines</h2>
-          <p>Tagline detects existing local Codex and Claude CLI sessions.</p>
+          <p>Goalbar detects existing local Codex and Claude CLI sessions.</p>
         </div>
       </div>
       <div className="settings-list">
@@ -104,7 +104,7 @@ function BrowserSettings() {
         <div>
           <strong>Recommended path</strong>
           <small>
-            Sign in inside Tagline. Website sessions stay in the desktop webview profile and never enter
+            Sign in inside Goalbar. Website sessions stay in the desktop webview profile and never enter
             prompts or exports.
           </small>
         </div>

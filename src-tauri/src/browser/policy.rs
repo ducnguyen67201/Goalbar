@@ -73,9 +73,11 @@ pub const fn capture_policy(platform: Platform) -> BrowserPolicyState {
 
 pub const fn collection_policy(platform: Platform) -> BrowserPolicyState {
     match platform {
-        // Website automation policies can change and are not equivalent to API approval.
-        // Keep the shipping default manual until a platform-specific policy decision enables it.
-        Platform::X | Platform::Reddit | Platform::Linkedin => BrowserPolicyState::ManualOnly,
+        // A run is local, visible, user-initiated, explicitly bounded, and read-only.
+        // It still pauses for login, verification, host changes, and uncertainty.
+        Platform::X | Platform::Reddit | Platform::Linkedin => {
+            BrowserPolicyState::BoundedCollection
+        }
     }
 }
 

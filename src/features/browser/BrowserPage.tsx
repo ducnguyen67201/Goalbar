@@ -1,12 +1,12 @@
 import { Globe2, LockKeyhole } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { PaneDivider } from "@/components/PaneDivider"
 import { Badge } from "@/components/ui/badge"
-import { BrowserConductorPanel } from "@/features/browser/BrowserConductorPanel"
+import { clampBrowserPanelWidth, responsiveBrowserPanelWidth } from "@/features/browser/browser-layout"
 import { BrowserStartPage } from "@/features/browser/BrowserStartPage"
 import { BrowserToolbar } from "@/features/browser/BrowserToolbar"
-import { HistoryImportPanel } from "@/features/browser/HistoryImportPanel"
+import { FounderChatPanel } from "@/features/browser/FounderChatPanel"
 import { useBrowserSurface } from "@/features/browser/useBrowserSurface"
 import { invokeOutput, invokeValidated, isTauriRuntime } from "@/lib/tauri"
 import { browserPanelWidthInputSchema, browserPanelWidthSchema } from "@/schemas/browser"
@@ -32,7 +32,21 @@ export function BrowserPage() {
     forward,
     reload,
   } = useBrowserSurface()
+  const workspaceRef = useRef<HTMLDivElement>(null)
   const [panelWidth, setPanelWidth] = useState(340)
+  const [workspaceWidth, setWorkspaceWidth] = useState(0)
+  const visiblePanelWidth = responsiveBrowserPanelWidth(panelWidth, workspaceWidth)
+
+  useEffect(() => {
+    const node = workspaceRef.current
+    if (!node || typeof ResizeObserver === "undefined") return
+
+    const updateWidth = () => setWorkspaceWidth(node.getBoundingClientRect().width)
+    const observer = new ResizeObserver(updateWidth)
+    updateWidth()
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!isTauriRuntime()) return
@@ -58,15 +72,19 @@ export function BrowserPage() {
   }, [])
 
   return (
-    <div className="browser-workspace" style={{ gridTemplateColumns: `${panelWidth}px 8px minmax(0, 1fr)` }}>
+    <div
+      className="browser-workspace"
+      ref={workspaceRef}
+      style={{ gridTemplateColumns: `${visiblePanelWidth}px 8px minmax(0, 1fr)` }}
+    >
       <aside className="browser-conductor-pane">
         <div className="browser-pane-header">
           <div>
             <p className="eyebrow">Browser · local session</p>
-            <h1>Research without switching.</h1>
+            <h1>Chat with the browser beside you.</h1>
           </div>
           <Badge tone="good">
-            <LockKeyhole size={12} /> Isolated
+            <LockKeyhole size={12} /> Local
           </Badge>
         </div>
         {newWindowUrl && (
@@ -79,48 +97,49 @@ export function BrowserPage() {
             <button onClick={() => void openNewWindow()}>Open visibly</button>
           </div>
         )}
-        <BrowserConductorPanel activeTab={activeTab} />
-        <HistoryImportPanel />
+        <FounderChatPanel activeTab={activeTab} />
       </aside>
       <PaneDivider
         label="Resize browser controls"
-        onMove={(delta) => setPanelWidth((value) => Math.max(280, Math.min(480, value + delta)))}
+        onMove={(delta) => setPanelWidth((value) => clampBrowserPanelWidth(value + delta))}
       />
       <section className="browser-pane" aria-label="Integrated browser">
-        <BrowserToolbar
-          key={`${startPageOpen ? "start" : (activeTab?.id ?? "empty")}:${activeTab?.currentUrl ?? ""}`}
-          tabs={tabs}
-          activeTab={activeTab}
-          startPageOpen={startPageOpen}
-          onCreate={openStartPage}
-          onCloseStartPage={closeStartPage}
-          onActivate={activate}
-          onClose={close}
-          onNavigate={navigate}
-          onBack={back}
-          onForward={forward}
-          onReload={reload}
-        />
-        <div className="browser-surface-slot" ref={surfaceRef}>
-          {startPageOpen && <BrowserStartPage onOpen={createTab} />}
-          {!startPageOpen && !isNative && (
-            <div className="browser-preview-placeholder">
-              <Globe2 size={34} />
-              <h2>Integrated browser preview</h2>
-              <p>
-                In the desktop app this surface is a native child webview. Sign-ins remain in the local
-                website profile and never enter Tagline memory.
-              </p>
-              <small>{activeTab?.currentUrl}</small>
+        <div className="browser-surface-workspace">
+          <BrowserToolbar
+            key={`${startPageOpen ? "start" : (activeTab?.id ?? "empty")}:${activeTab?.currentUrl ?? ""}`}
+            tabs={tabs}
+            activeTab={activeTab}
+            startPageOpen={startPageOpen}
+            onCreate={openStartPage}
+            onCloseStartPage={closeStartPage}
+            onActivate={activate}
+            onClose={close}
+            onNavigate={navigate}
+            onBack={back}
+            onForward={forward}
+            onReload={reload}
+          />
+          <div className="browser-surface-slot" ref={surfaceRef}>
+            {startPageOpen && <BrowserStartPage onOpen={createTab} />}
+            {!startPageOpen && !isNative && (
+              <div className="browser-preview-placeholder">
+                <Globe2 size={34} />
+                <h2>Integrated browser preview</h2>
+                <p>
+                  In the desktop app this surface is a native child webview. Sign-ins remain in the local
+                  website profile and never enter Goalbar memory.
+                </p>
+                <small>{activeTab?.currentUrl}</small>
+              </div>
+            )}
+          </div>
+          {error && (
+            <div className="browser-engine-error">
+              <strong>Browser engine unavailable</strong>
+              <span>{error}</span>
             </div>
           )}
         </div>
-        {error && (
-          <div className="browser-engine-error">
-            <strong>Browser engine unavailable</strong>
-            <span>{error}</span>
-          </div>
-        )}
       </section>
     </div>
   )

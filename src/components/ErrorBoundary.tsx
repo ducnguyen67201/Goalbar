@@ -12,7 +12,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error) {
-    console.error("[tagline] render failure", error.message)
+    console.error("[goalbar] render failure", error.message)
   }
 
   render() {

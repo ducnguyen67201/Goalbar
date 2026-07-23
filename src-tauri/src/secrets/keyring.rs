@@ -7,7 +7,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::error::{AppError, AppResult};
 
-pub const KEYRING_SERVICE: &str = "com.foundergrowthlab.desktop";
+pub const KEYRING_SERVICE: &str = "com.ducnguyen.goalbar";
 
 pub trait SecretStore: Debug + Send + Sync {
     fn load(&self, account: &str) -> AppResult<Option<SecretString>>;
