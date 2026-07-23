@@ -4780,6 +4780,7 @@ body {
 
 .gb-nav-cta,
 .gb-nav-download,
+.gb-nav-github,
 .gb-button,
 .gb-download-control,
 .gb-download-control button,
@@ -4802,7 +4803,8 @@ body {
 }
 
 .gb-nav-cta,
-.gb-nav-download {
+.gb-nav-download,
+.gb-nav-github {
   min-height: 38px;
   padding: 0 13px;
   border: 2px solid var(--gb-ink);
@@ -4813,6 +4815,38 @@ body {
   box-shadow: 3px 3px 0 var(--gb-ink);
 }
 
+.gb-nav-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--gb-ink);
+  background: var(--gb-paper-strong);
+  box-shadow:
+    3px 3px 0 var(--gb-ink),
+    5px 5px 0 var(--gb-blue);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.gb-github-stars {
+  min-width: 32px;
+  min-height: 22px;
+  padding-left: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-left: 2px solid var(--gb-ink);
+  color: var(--gb-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.gb-github-stars svg {
+  color: #9e7611;
+  fill: #ffd660;
+}
+
 .gb-nav-cta {
   border-color: var(--gb-ink);
   box-shadow: 3px 3px 0 var(--gb-lime);
@@ -4820,6 +4854,7 @@ body {
 
 .gb-nav-cta:hover,
 .gb-nav-download:hover,
+.gb-nav-github:hover,
 .gb-button:hover {
   transform: translate(2px, 2px);
   box-shadow: 1px 1px 0 var(--gb-ink);
@@ -6051,6 +6086,20 @@ body {
   }
 }
 
+@media (max-width: 1080px) {
+  .gb-nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .gb-nav nav {
+    display: none;
+  }
+
+  .gb-nav-actions {
+    grid-column: 2;
+  }
+}
+
 @media (max-width: 820px) {
   .gb-hero {
     padding-top: 62px;
@@ -6079,6 +6128,18 @@ body {
 }
 
 @media (max-width: 520px) {
+  .gb-nav-actions {
+    gap: 6px;
+  }
+
+  .gb-nav-github {
+    padding-inline: 9px;
+  }
+
+  .gb-github-label {
+    display: none;
+  }
+
   .gb-hero h1 {
     font-size: 45px;
   }

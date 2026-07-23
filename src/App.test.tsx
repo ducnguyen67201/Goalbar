@@ -49,7 +49,11 @@ describe("application shell", () => {
       </QueryClientProvider>,
     )
     expect(screen.getByRole("link", { name: "Goalbar home" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Your outbound cofounder.", level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Star Goalbar on GitHub, 0 stars" })).toHaveAttribute(
+      "href",
+      "https://github.com/ducnguyen67201/Goalbar",
+    )
+    expect(screen.getByRole("heading", { name: "Your GTM cofounder.", level: 1 })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Replay the clicks" })).toBeInTheDocument()
     await user.type(screen.getAllByRole("textbox", { name: "Email address" })[0], "founder@example.com")
     await user.click(screen.getAllByRole("button", { name: "Email me the download" })[0])

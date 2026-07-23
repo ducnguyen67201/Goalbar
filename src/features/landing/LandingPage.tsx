@@ -5,14 +5,20 @@ import {
   CircleCheck,
   Command,
   Download,
+  Github,
   LockKeyhole,
   MousePointer2,
   Play,
   Search,
   Sparkles,
+  Star,
 } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+
+const goalbarRepositoryUrl = "https://github.com/ducnguyen67201/Goalbar"
+const goalbarRepositoryApiUrl = "https://api.github.com/repos/ducnguyen67201/Goalbar"
+const initialGitHubStars = 0
 
 const platforms = [
   { name: "LinkedIn", mark: "in", className: "is-linkedin" },
@@ -43,6 +49,7 @@ const capabilities = [
 
 export function LandingPage() {
   const [sceneKey, setSceneKey] = useState(0)
+  const githubStars = useGitHubStars()
 
   return (
     <div className="gb-landing">
@@ -59,6 +66,20 @@ export function LandingPage() {
         </nav>
 
         <div className="gb-nav-actions">
+          <a
+            className="gb-nav-github"
+            href={goalbarRepositoryUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Star Goalbar on GitHub, ${githubStars} ${githubStars === 1 ? "star" : "stars"}`}
+          >
+            <Github size={15} aria-hidden="true" />
+            <span className="gb-github-label">GitHub</span>
+            <span className="gb-github-stars" aria-live="polite">
+              <Star size={12} fill="currentColor" aria-hidden="true" />
+              {formatStarCount(githubStars)}
+            </span>
+          </a>
           <a className="gb-nav-download" href="#download">
             Get download <Download size={14} aria-hidden="true" />
           </a>
@@ -77,7 +98,7 @@ export function LandingPage() {
               Content + outbound, on your machine
             </p>
             <h1>
-              Your outbound
+              Your GTM
               <br />
               <span className="gb-drag-word">
                 <em>cofounder.</em>
@@ -339,7 +360,7 @@ export function LandingPage() {
           </span>
           <span>goalbar</span>
         </a>
-        <p>Your local outbound cofounder.</p>
+        <p>Your local GTM cofounder.</p>
         <div>
           <a href="#why-goalbar">Why Goalbar</a>
           <Link to="/">Open app</Link>
@@ -347,6 +368,46 @@ export function LandingPage() {
       </footer>
     </div>
   )
+}
+
+function useGitHubStars() {
+  const [stars, setStars] = useState(initialGitHubStars)
+
+  useEffect(() => {
+    if (import.meta.env.MODE === "test") return
+
+    const controller = new AbortController()
+
+    async function loadStars() {
+      try {
+        const response = await fetch(goalbarRepositoryApiUrl, {
+          headers: { Accept: "application/vnd.github+json" },
+          signal: controller.signal,
+        })
+        if (!response.ok) return
+
+        const repository = (await response.json()) as { stargazers_count?: unknown }
+        if (typeof repository.stargazers_count === "number") {
+          setStars(repository.stargazers_count)
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          return
+        }
+      }
+    }
+
+    void loadStars()
+    return () => controller.abort()
+  }, [])
+
+  return stars
+}
+
+function formatStarCount(stars: number) {
+  if (stars < 1_000) return stars.toString()
+  if (stars < 10_000) return `${(stars / 1_000).toFixed(1)}k`
+  return `${Math.round(stars / 1_000)}k`
 }
 
 function SideComputer() {
