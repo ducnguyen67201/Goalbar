@@ -1,22 +1,38 @@
 import { useMutation } from "@tanstack/react-query"
 import { listen } from "@tauri-apps/api/event"
-import { Archive, Bot, CheckCircle2, FlaskConical, LoaderCircle, Send, Sparkles, XCircle } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import {
+  Archive,
+  Bot,
+  CheckCircle2,
+  FlaskConical,
+  LoaderCircle,
+  Plus,
+  Send,
+  Sparkles,
+  Square,
+  XCircle,
+} from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { z } from "zod"
 
 import { useBootstrap } from "@/app/bootstrap"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { HistoryImportPanel } from "@/features/browser/HistoryImportPanel"
-import { invokeValidated, isTauriRuntime } from "@/lib/tauri"
+import { invokeOutput, invokeValidated, isTauriRuntime } from "@/lib/tauri"
 import {
+  codexChatEventSchema,
+  codexChatStateSchema,
+  codexChatTurnResultSchema,
   founderChatAgentResultSchema,
   founderChatOutputJsonSchema,
+  founderChatResearchRequestSchema,
   founderChatTurnSchema,
   runAgentTaskInputSchema,
+  sendCodexChatInputSchema,
   type AgentProvider,
+  type CodexChatEvent,
   type FounderChatResearchRequest,
   type FounderChatTurn,
 } from "@/schemas/agent"
@@ -43,19 +59,49 @@ type ChatMessage = {
   body: string
 }
 
+type BrowserTaskInvocation = {
+  request: FounderChatResearchRequest
+  tab: BrowserTab
+  provider: AgentProvider
+}
+
+type ChatSubmission = {
+  message: string
+  tab: BrowserTab | null
+  provider: AgentProvider
+}
+
+type CodexChatSubmission = {
+  message: string
+  tab: BrowserTab | null
+}
+
+type CodexToolActivity = {
+  tool: string
+  status: "running" | "completed" | "paused"
+  message: string | null
+}
+
+const AUTOMATIC_BROWSER_MAX_ITEMS = 25
+const AUTOMATIC_BROWSER_MAX_STEPS = 8
+
 const initialMessage: ChatMessage = {
   id: "founder-chat-welcome",
   role: "assistant",
-  body: "I’m your founder chat. Ask about your ICP, positioning, content, or the page beside us. When browser evidence is needed, I’ll request the Research add-on.",
+  body: "I’m your founder chat. Ask about your ICP, positioning, content, or the page beside us. When your request needs browser evidence, I’ll use Browser Use on the open supported tab.",
 }
 
 const chatPrompt = `
 You are Goalbar's founder chat: a concise strategic partner for a solo founder.
 Help with ICP discovery, founder voice, content, conversations, and sustainable growth.
-You can request one local tool named research_current_page when the answer requires evidence from the
+You can request one local tool named browser_use_current_tab when the answer requires evidence from the
 currently visible X, LinkedIn, or Reddit page. Never claim you read the page unless that tool has run.
-When research is useful, return a researchRequest with a focused objective, a short reason, ownership,
-and conservative limits. Otherwise researchRequest must be null.
+Use it for requests to find, rank, compare, summarize, or analyze posts, accounts, profiles, feeds,
+audience language, or ICP signals on the current page. The user's message authorizes this bounded,
+read-only tool call, so do not ask for a second confirmation. When the user gives a count, use it as
+maximumItems. Otherwise default to 12 items. Never request more than 25 items or 8 browser steps.
+When browser evidence is useful, return a researchRequest with a focused objective, a short reason,
+ownership, and conservative limits. Otherwise researchRequest must be null.
 Never publish, send a DM, or imply an external action occurred.
 `.trim()
 
@@ -63,24 +109,72 @@ function newMessage(role: ChatMessage["role"], body: string): ChatMessage {
   return { id: crypto.randomUUID(), role, body }
 }
 
-function previewFounderChatTurn(message: string): FounderChatTurn {
-  const wantsResearch = /\b(research|analy[sz]e|icp|signal|pain|audience|this (page|feed|profile))\b/i.test(
-    message,
-  )
-  return founderChatTurnSchema.parse({
-    reply: wantsResearch
-      ? "This needs evidence from the visible page. I’ve prepared a bounded Research add-on request for you to review."
-      : "I can help shape that. Give me the audience, the outcome you want, and what you already believe to be true.",
-    researchRequest: wantsResearch
-      ? {
-          objective: message.trim(),
-          reason: "The answer depends on current audience language and signals from the visible page.",
-          ownership: "reference",
-          maximumItems: 30,
-          maximumSteps: 8,
-        }
-      : null,
+function boundAutomaticResearchRequest(request: FounderChatResearchRequest): FounderChatResearchRequest {
+  return founderChatResearchRequestSchema.parse({
+    ...request,
+    maximumItems: Math.min(request.maximumItems, AUTOMATIC_BROWSER_MAX_ITEMS),
+    maximumSteps: Math.min(request.maximumSteps, AUTOMATIC_BROWSER_MAX_STEPS),
   })
+}
+
+function requestedItemCount(message: string): number | null {
+  const match = message.match(
+    /\b(?:(?:top|good|best|relevant)\s+)*(\d{1,3})\s+(?:(?:good|best|relevant)\s+)*(?:posts?|accounts?|profiles?|items?|examples?)\b/i,
+  )
+  if (!match) return null
+  return Math.max(1, Math.min(Number(match[1]), AUTOMATIC_BROWSER_MAX_ITEMS))
+}
+
+function inferBrowserResearchRequest(message: string): FounderChatResearchRequest | null {
+  const hasBrowserVerb =
+    /\b(research|analy[sz]e|find|discover|scan|browse|explore|look|open|summari[sz]e|rank|compare)\b/i.test(
+      message,
+    )
+  const hasBrowserObject =
+    /\b(icp|audience|customers?|signals?|pains?|posts?|accounts?|profiles?|feeds?|pages?|tabs?)\b/i.test(
+      message,
+    )
+  const pointsAtOpenPage =
+    /\b(?:this|current|visible|open)\s+(?:page|feed|tab|profile|post|account)\b|\bon (?:this|the) (?:page|screen)\b/i.test(
+      message,
+    )
+  const wantsResearch = (hasBrowserVerb && hasBrowserObject) || pointsAtOpenPage
+  if (!wantsResearch) return null
+  const maximumItems = requestedItemCount(message) ?? 12
+  return founderChatResearchRequestSchema.parse({
+    objective: message.trim(),
+    reason: "The answer depends on navigating and reading evidence in the open browser tab.",
+    ownership: "reference",
+    maximumItems,
+    maximumSteps: Math.min(AUTOMATIC_BROWSER_MAX_STEPS, Math.max(2, Math.ceil(maximumItems / 5) + 1)),
+  })
+}
+
+function previewFounderChatTurn(message: string): FounderChatTurn {
+  const researchRequest = inferBrowserResearchRequest(message)
+  return founderChatTurnSchema.parse({
+    reply: researchRequest
+      ? "I’ll use Browser Use on the open tab now and return a bounded, grounded result."
+      : "I can help shape that. Give me the audience, the outcome you want, and what you already believe to be true.",
+    researchRequest,
+  })
+}
+
+function browserToolLabel(tool: string) {
+  switch (tool) {
+    case "browser_observe":
+      return "Reading the visible page"
+    case "browser_scroll":
+      return "Moving through the page"
+    case "browser_scan_feed":
+      return "Scanning consecutive feed batches"
+    case "browser_open_link":
+      return "Opening a visible link"
+    case "browser_go_back":
+      return "Returning to the starting page"
+    default:
+      return tool
+  }
 }
 
 export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
@@ -89,19 +183,38 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([initialMessage])
   const [composer, setComposer] = useState("")
   const [researchRequest, setResearchRequest] = useState<FounderChatResearchRequest | null>(null)
-  const [boundsConfirmed, setBoundsConfirmed] = useState(false)
+  const [researchTab, setResearchTab] = useState<BrowserTab | null>(null)
   const [progress, setProgress] = useState<BrowserRunProgress | null>(null)
   const [trace, setTrace] = useState<BrowserResearchTrace[]>([])
   const [findings, setFindings] = useState<StoredResearchFinding[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [streamingReply, setStreamingReply] = useState("")
+  const [codexToolActivity, setCodexToolActivity] = useState<CodexToolActivity | null>(null)
+  const [chatStateError, setChatStateError] = useState<Error | null>(null)
+  const chatInteractionStarted = useRef(false)
 
   const agentStatuses = useMemo(
     () => new Map(bootstrap.data?.agents.map((status) => [status.provider, status])),
     [bootstrap.data?.agents],
   )
 
+  const hydrateCodexChat = useCallback(async (force = false) => {
+    if (!isTauriRuntime()) return
+    try {
+      const state = await invokeOutput("get_codex_chat_state", {}, codexChatStateSchema)
+      if (!force && chatInteractionStarted.current) return
+      setMessages([initialMessage, ...state.messages])
+      setChatStateError(null)
+    } catch (error) {
+      setChatStateError(error instanceof Error ? error : new Error(String(error)))
+    }
+  }, [])
+
   useEffect(() => {
     if (!isTauriRuntime()) return
+    const hydrationTimer = window.setTimeout(() => {
+      void hydrateCodexChat()
+    }, 0)
     const progressListener = listen<unknown>("browser://run-progress", (event) => {
       setProgress(browserRunProgressSchema.parse(event.payload))
     })
@@ -117,12 +230,30 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
         current.some((existing) => existing.id === item.id) ? current : [item, ...current],
       )
     })
+    const codexChatListener = listen<unknown>("codex://chat-event", (event) => {
+      const item: CodexChatEvent = codexChatEventSchema.parse(event.payload)
+      if (item.kind === "assistant_delta" && item.delta) {
+        setStreamingReply((current) => current + item.delta)
+      } else if (item.kind === "tool_started" && item.tool) {
+        setCodexToolActivity({ tool: item.tool, status: "running", message: null })
+      } else if (item.kind === "tool_completed" && item.tool) {
+        setCodexToolActivity({
+          tool: item.tool,
+          status: item.success === false ? "paused" : "completed",
+          message: item.message,
+        })
+      } else if (item.kind === "state_changed") {
+        if (!chatInteractionStarted.current) void hydrateCodexChat(true)
+      }
+    })
     return () => {
+      window.clearTimeout(hydrationTimer)
       void progressListener.then((dispose) => dispose())
       void traceListener.then((dispose) => dispose())
       void findingListener.then((dispose) => dispose())
+      void codexChatListener.then((dispose) => dispose())
     }
-  }, [])
+  }, [hydrateCodexChat])
 
   const loadResearchArtifacts = async (runId: string) => {
     if (!isTauriRuntime()) return
@@ -145,79 +276,27 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
     setTrace(storedTrace)
   }
 
-  const chat = useMutation({
-    mutationFn: async (message: string) => {
-      if (!isTauriRuntime()) return previewFounderChatTurn(message)
-      const input = {
-        provider,
-        taskKind: "founder_chat",
-        prompt: chatPrompt,
-        context: {
-          conversation: [...messages, newMessage("user", message)]
-            .slice(-12)
-            .map(({ role, body }) => ({ role, body })),
-          activePage: activeTab
-            ? {
-                title: activeTab.title,
-                url: activeTab.currentUrl,
-                platform: activeTab.platform ?? null,
-              }
-            : null,
-          tools: [
-            {
-              name: "research_current_page",
-              description:
-                "Collect a bounded sample from the visible supported platform page after explicit user approval.",
-            },
-          ],
-        },
-        outputSchema: founderChatOutputJsonSchema,
-      }
-      const result = await invokeValidated(
-        "run_agent_task",
-        { input },
-        runAgentTaskInputSchema,
-        founderChatAgentResultSchema,
-      )
-      return result.output
-    },
-    onMutate: (message) => {
-      setMessages((current) => [...current, newMessage("user", message)])
-      setComposer("")
-    },
-    onSuccess: (turn) => {
-      setMessages((current) => [...current, newMessage("assistant", turn.reply)])
-      setResearchRequest(turn.researchRequest)
-      setBoundsConfirmed(false)
-      setProgress(null)
-      setTrace([])
-      setFindings([])
-    },
-  })
-
   const collect = useMutation({
-    mutationFn: async () => {
-      if (!activeTab) throw new Error("Open an X, LinkedIn, or Reddit page first")
-      if (!researchRequest) throw new Error("The chat has not requested research")
+    mutationFn: async ({ request, tab, provider: taskProvider }: BrowserTaskInvocation) => {
       const input = {
-        tabId: activeTab.id,
-        objective: researchRequest.objective,
+        tabId: tab.id,
+        objective: request.objective,
         limits: {
-          maximumItems: researchRequest.maximumItems,
-          maximumSteps: researchRequest.maximumSteps,
+          maximumItems: request.maximumItems,
+          maximumSteps: request.maximumSteps,
         },
-        ownership: researchRequest.ownership,
-        provider,
+        ownership: request.ownership,
+        provider: taskProvider,
       }
       if (!isTauriRuntime())
         return browserRunProgressSchema.parse({
           runId: crypto.randomUUID(),
           status: "completed",
           step: 1,
-          itemCount: 8,
-          newItemCount: 8,
+          itemCount: request.maximumItems,
+          newItemCount: request.maximumItems,
           pauseReason: null,
-          summary: "Preview research completed with a bounded sample.",
+          summary: "Preview Browser Use completed with a bounded sample.",
         })
       return invokeValidated(
         "start_browser_collection",
@@ -226,7 +305,10 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
         browserRunProgressSchema,
       )
     },
-    onMutate: () => {
+    onMutate: ({ request, tab }) => {
+      setResearchRequest(request)
+      setResearchTab(tab)
+      setProgress(null)
       setTrace([])
       setFindings([])
     },
@@ -241,6 +323,156 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
         ),
       ])
       void loadResearchArtifacts(value.runId)
+    },
+  })
+
+  const codexChat = useMutation({
+    mutationFn: async ({ message, tab }: CodexChatSubmission) => {
+      if (!isTauriRuntime()) {
+        const browserRequest = inferBrowserResearchRequest(message)
+        return codexChatTurnResultSchema.parse({
+          threadId: crypto.randomUUID(),
+          turnId: crypto.randomUUID(),
+          reply: browserRequest
+            ? tab?.platform
+              ? `I inspected the open ${tab.platform.toUpperCase()} page with Browser Use and prepared a grounded answer.`
+              : "Open X, LinkedIn, or Reddit beside this chat so Browser Use has a page to inspect."
+            : previewFounderChatTurn(message).reply,
+        })
+      }
+      const input = {
+        message,
+        activeTabId: tab?.platform ? tab.id : null,
+      }
+      return invokeValidated(
+        "send_codex_chat_message",
+        { input },
+        sendCodexChatInputSchema,
+        codexChatTurnResultSchema,
+      )
+    },
+    onMutate: ({ message, tab }) => {
+      chatInteractionStarted.current = true
+      setMessages((current) => [...current, newMessage("user", message)])
+      setComposer("")
+      setStreamingReply("")
+      setCodexToolActivity(
+        !isTauriRuntime() && inferBrowserResearchRequest(message) && tab?.platform
+          ? { tool: "browser_observe", status: "running", message: null }
+          : null,
+      )
+      setResearchRequest(null)
+      setResearchTab(null)
+      setProgress(null)
+      setTrace([])
+      setFindings([])
+    },
+    onSuccess: (result) => {
+      setMessages((current) => [...current, newMessage("assistant", result.reply)])
+      setStreamingReply("")
+      setCodexToolActivity((current) =>
+        current?.status === "running"
+          ? { ...current, status: "completed", message: current.message ?? "Browser action completed" }
+          : current,
+      )
+    },
+    onError: (error) => {
+      setStreamingReply("")
+      setCodexToolActivity((current) =>
+        current?.status === "running" ? { ...current, status: "paused", message: error.message } : current,
+      )
+    },
+  })
+
+  const chat = useMutation({
+    mutationFn: async ({ message, tab, provider: chatProvider }: ChatSubmission) => {
+      if (!isTauriRuntime()) return previewFounderChatTurn(message)
+      const input = {
+        provider: chatProvider,
+        taskKind: "founder_chat",
+        prompt: chatPrompt,
+        context: {
+          conversation: [...messages, newMessage("user", message)]
+            .slice(-12)
+            .map(({ role, body }) => ({ role, body })),
+          activePage: tab
+            ? {
+                title: tab.title,
+                url: tab.currentUrl,
+                platform: tab.platform ?? null,
+              }
+            : null,
+          tools: [
+            {
+              name: "browser_use_current_tab",
+              description:
+                "Automatically observe, scroll, follow visible same-platform links, and go back in the current supported tab. It pauses before typing, arbitrary clicks, publishing, messaging, liking, following, or any account state change.",
+            },
+          ],
+        },
+        outputSchema: founderChatOutputJsonSchema,
+      }
+      const result = await invokeValidated(
+        "run_agent_task",
+        { input },
+        runAgentTaskInputSchema,
+        founderChatAgentResultSchema,
+      )
+      return result.output
+    },
+    onMutate: ({ message }) => {
+      chatInteractionStarted.current = true
+      setMessages((current) => [...current, newMessage("user", message)])
+      setComposer("")
+    },
+    onSuccess: (turn, submission) => {
+      setMessages((current) => [...current, newMessage("assistant", turn.reply)])
+      setProgress(null)
+      setTrace([])
+      setFindings([])
+      if (!turn.researchRequest) {
+        setResearchRequest(null)
+        setResearchTab(null)
+        return
+      }
+
+      const request = boundAutomaticResearchRequest(turn.researchRequest)
+      setResearchRequest(request)
+      setResearchTab(submission.tab)
+      if (!submission.tab?.platform) {
+        setMessages((current) => [
+          ...current,
+          newMessage("tool", "Browser Use paused: open an X, LinkedIn, or Reddit page, then ask me again."),
+        ])
+        return
+      }
+      collect.mutate({ request, tab: submission.tab, provider: submission.provider })
+    },
+  })
+
+  const interruptCodexChat = useMutation({
+    mutationFn: async () => {
+      if (!isTauriRuntime()) return true
+      return invokeOutput("interrupt_codex_chat", {}, z.boolean())
+    },
+  })
+
+  const newCodexChat = useMutation({
+    mutationFn: async () => {
+      if (!isTauriRuntime()) return crypto.randomUUID()
+      return invokeOutput("new_codex_chat", {}, z.string().min(1))
+    },
+    onSuccess: () => {
+      chatInteractionStarted.current = false
+      setMessages([initialMessage])
+      setComposer("")
+      setStreamingReply("")
+      setCodexToolActivity(null)
+      setResearchRequest(null)
+      setResearchTab(null)
+      setProgress(null)
+      setTrace([])
+      setFindings([])
     },
   })
 
@@ -268,9 +500,49 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
 
   const submit = () => {
     const message = composer.trim()
-    if (message && !chat.isPending) chat.mutate(message)
+    if (!message || chat.isPending || codexChat.isPending || collect.isPending) return
+
+    if (provider === "codex") {
+      codexChat.mutate({ message, tab: activeTab })
+      return
+    }
+
+    const inferredRequest = inferBrowserResearchRequest(message)
+    if (!inferredRequest) {
+      chat.mutate({ message, tab: activeTab, provider })
+      return
+    }
+
+    const request = boundAutomaticResearchRequest(inferredRequest)
+    const response = activeTab?.platform
+      ? `I’ll use Browser Use on the open ${activeTab.platform.toUpperCase()} tab now and return a bounded, grounded result.`
+      : "Browser Use needs an open X, LinkedIn, or Reddit tab."
+    chatInteractionStarted.current = true
+    setMessages((current) => [
+      ...current,
+      newMessage("user", message),
+      newMessage("assistant", response),
+      ...(!activeTab?.platform
+        ? [newMessage("tool", "Browser Use paused: open an X, LinkedIn, or Reddit page, then ask me again.")]
+        : []),
+    ])
+    setComposer("")
+    setResearchRequest(request)
+    setResearchTab(activeTab)
+    setProgress(null)
+    setTrace([])
+    setFindings([])
+    if (activeTab?.platform) collect.mutate({ request, tab: activeTab, provider })
   }
-  const error = chat.error ?? collect.error ?? review.error
+  const error =
+    codexChat.error ??
+    chat.error ??
+    collect.error ??
+    interruptCodexChat.error ??
+    newCodexChat.error ??
+    review.error ??
+    chatStateError
+  const chatPending = codexChat.isPending || chat.isPending
 
   return (
     <section className="founder-chat" aria-label="Founder chat">
@@ -284,126 +556,109 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
             <small>Local {provider} session</small>
           </div>
         </div>
-        <div className="segmented compact" aria-label="Chat provider">
-          {(["codex", "claude"] as const).map((candidate) => {
-            const status = agentStatuses.get(candidate)
-            const unavailable = Boolean(status && status.readiness !== "ready")
-            return (
-              <button
-                className={provider === candidate ? "active" : ""}
-                disabled={unavailable}
-                key={candidate}
-                onClick={() => setProvider(candidate)}
-              >
-                {candidate}
-              </button>
-            )
-          })}
+        <div className="founder-chat-header-actions">
+          <div className="segmented compact" aria-label="Chat provider">
+            {(["codex", "claude"] as const).map((candidate) => {
+              const status = agentStatuses.get(candidate)
+              const unavailable = Boolean(status && status.readiness !== "ready")
+              return (
+                <button
+                  className={provider === candidate ? "active" : ""}
+                  disabled={unavailable || chatPending}
+                  key={candidate}
+                  onClick={() => setProvider(candidate)}
+                >
+                  {candidate}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            className="chat-new-button"
+            type="button"
+            aria-label="New Codex chat"
+            disabled={chatPending || newCodexChat.isPending}
+            onClick={() => newCodexChat.mutate()}
+          >
+            {newCodexChat.isPending ? <LoaderCircle size={13} /> : <Plus size={13} />}
+          </button>
         </div>
       </header>
 
       <div className="founder-chat-messages" aria-live="polite">
         {messages.map((message) => (
           <article className={`chat-message ${message.role}`} key={message.id}>
-            <span>{message.role === "user" ? "You" : message.role === "tool" ? "Research" : "Goalbar"}</span>
+            <span>{message.role === "user" ? "You" : message.role === "tool" ? "Browser" : "Goalbar"}</span>
             <p>{message.body}</p>
           </article>
         ))}
-        {chat.isPending && (
+        {streamingReply && (
+          <article className="chat-message assistant streaming">
+            <span>Goalbar</span>
+            <p>{streamingReply}</p>
+          </article>
+        )}
+        {chatPending && !streamingReply && (
           <div className="chat-thinking">
             <LoaderCircle size={13} /> {provider} is thinking…
           </div>
         )}
 
-        {researchRequest && (
-          <section className="chat-tool-call" aria-label="Research add-on request">
+        {codexToolActivity && (
+          <section className="chat-tool-call codex-tool-activity" aria-label="Codex Browser Use activity">
             <div className="chat-tool-call-heading">
               <span>
                 <FlaskConical size={14} />
               </span>
               <div>
-                <strong>Research add-on requested</strong>
+                <strong>
+                  {codexToolActivity.status === "running"
+                    ? browserToolLabel(codexToolActivity.tool)
+                    : codexToolActivity.status === "completed"
+                      ? "Browser Use complete"
+                      : "Browser Use paused"}
+                </strong>
+                <small>Called directly by the persistent Codex chat</small>
+              </div>
+            </div>
+            {codexToolActivity.message && <p className="chat-tool-objective">{codexToolActivity.message}</p>}
+          </section>
+        )}
+
+        {researchRequest && (
+          <section className="chat-tool-call" aria-label="Browser Use activity">
+            <div className="chat-tool-call-heading">
+              <span>
+                <FlaskConical size={14} />
+              </span>
+              <div>
+                <strong>
+                  {collect.isPending || progress?.status === "running"
+                    ? `Using Browser Use on ${researchTab?.platform?.toUpperCase() ?? "current tab"}`
+                    : progress?.status === "completed"
+                      ? "Browser Use complete"
+                      : progress?.status === "paused" || !researchTab?.platform
+                        ? "Browser Use paused"
+                        : "Browser Use ready"}
+                </strong>
                 <small>{researchRequest.reason}</small>
               </div>
             </div>
-            <label className="field">
-              <span>Objective</span>
-              <Textarea
-                aria-label="Research objective"
-                id="chat-research-objective"
-                name="chatResearchObjective"
-                rows={3}
-                value={researchRequest.objective}
-                onChange={(event) => {
-                  setResearchRequest({ ...researchRequest, objective: event.target.value })
-                  setBoundsConfirmed(false)
-                }}
-              />
-            </label>
-            <div className="field-grid two">
-              <label className="field">
-                <span>Max items</span>
-                <Input
-                  aria-label="Research maximum items"
-                  id="chat-research-maximum-items"
-                  name="chatResearchMaximumItems"
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={researchRequest.maximumItems}
-                  onChange={(event) => {
-                    setResearchRequest({
-                      ...researchRequest,
-                      maximumItems: Number(event.target.value),
-                    })
-                    setBoundsConfirmed(false)
-                  }}
-                />
-              </label>
-              <label className="field">
-                <span>Max steps</span>
-                <Input
-                  aria-label="Research maximum steps"
-                  id="chat-research-maximum-steps"
-                  name="chatResearchMaximumSteps"
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={researchRequest.maximumSteps}
-                  onChange={(event) => {
-                    setResearchRequest({
-                      ...researchRequest,
-                      maximumSteps: Number(event.target.value),
-                    })
-                    setBoundsConfirmed(false)
-                  }}
-                />
-              </label>
+            <p className="chat-tool-objective">{researchRequest.objective}</p>
+            <div className="chat-tool-limits" aria-label="Automatic Browser Use limits">
+              <Badge tone="neutral">Read only</Badge>
+              <span>Up to {researchRequest.maximumItems} items</span>
+              <span>Up to {researchRequest.maximumSteps} steps</span>
             </div>
-            <label className="bounds-confirmation">
-              <input
-                name="confirmChatResearchBounds"
-                type="checkbox"
-                checked={boundsConfirmed}
-                onChange={(event) => setBoundsConfirmed(event.target.checked)}
-              />
-              <span>I approve this objective and these hard limits.</span>
-            </label>
-            <Button
-              size="small"
-              disabled={
-                !activeTab || !boundsConfirmed || collect.isPending || progress?.status === "completed"
-              }
-              onClick={() => collect.mutate()}
-            >
-              {collect.isPending
-                ? "Researching…"
-                : progress?.status === "completed"
-                  ? "Research complete"
-                  : "Run approved research"}
-            </Button>
-            {!activeTab && (
-              <small className="tool-hint">Open a supported browser page to enable this tool.</small>
+            {!researchTab?.platform && (
+              <small className="tool-hint">
+                Open X, LinkedIn, or Reddit and ask again so the tool knows which tab to use.
+              </small>
+            )}
+            {collect.isPending && (
+              <div className="chat-thinking">
+                <LoaderCircle size={13} /> Observing and navigating the open tab…
+              </div>
             )}
             {progress && (
               <div className="run-progress">
@@ -481,7 +736,7 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
             if (!composer) setComposer("Research this page for ICP pains, goals, and exact customer language")
           }}
         >
-          <FlaskConical size={13} /> Research
+          <FlaskConical size={13} /> Browser Use
           <span>chat callable</span>
         </button>
         <button onClick={() => setHistoryOpen((value) => !value)}>
@@ -515,15 +770,33 @@ export function FounderChatPanel({ activeTab }: FounderChatPanelProps) {
         />
         <Button
           size="icon"
-          type="submit"
-          aria-label="Send message"
-          disabled={!composer.trim() || chat.isPending}
+          type={codexChat.isPending ? "button" : "submit"}
+          aria-label={codexChat.isPending ? "Stop Codex response" : "Send message"}
+          disabled={
+            codexChat.isPending
+              ? interruptCodexChat.isPending
+              : !composer.trim() || chat.isPending || collect.isPending
+          }
+          onClick={
+            codexChat.isPending
+              ? () => {
+                  interruptCodexChat.mutate()
+                }
+              : undefined
+          }
         >
-          {chat.isPending ? <LoaderCircle size={15} /> : <Send size={15} />}
+          {codexChat.isPending ? (
+            <Square size={13} />
+          ) : chat.isPending || collect.isPending ? (
+            <LoaderCircle size={15} />
+          ) : (
+            <Send size={15} />
+          )}
         </Button>
       </form>
       <p className="founder-chat-footnote">
-        <Sparkles size={11} /> Tools receive bounded evidence only. Publishing and sending always require you.
+        <Sparkles size={11} /> Codex keeps this thread alive. Browser Use is bounded and read-only; typing,
+        publishing, and sending always require you.
       </p>
     </section>
   )

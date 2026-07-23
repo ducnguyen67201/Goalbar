@@ -111,6 +111,8 @@ export function MemoryPage() {
       : (icp?.hypotheses.map((hypothesis) => ({
           ...hypothesis,
           id: null,
+          version: 1,
+          parentId: null,
           status: "proposed" as const,
         })) ?? [])
 
@@ -226,7 +228,7 @@ export function MemoryPage() {
               {displayedIcp.map((hypothesis) => (
                 <article key={`${hypothesis.role}-${hypothesis.situation}`}>
                   <Badge tone={hypothesis.status === "active" ? "good" : "warn"}>
-                    {hypothesis.status === "active" ? "Active · " : "Proposed · "}
+                    v{hypothesis.version} · {hypothesis.status === "active" ? "Active · " : "Proposed · "}
                     {Math.round(hypothesis.confidence * 100)}% confidence
                   </Badge>
                   <h3>{hypothesis.role}</h3>

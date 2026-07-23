@@ -8,4 +8,5 @@ export const queryKeys = {
   history: ["history-overview"] as const,
   icp: ["icp"] as const,
   growth: ["growth"] as const,
+  growthLoop: ["growth-loop"] as const,
 }

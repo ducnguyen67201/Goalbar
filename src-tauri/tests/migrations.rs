@@ -48,3 +48,44 @@ async fn migration_seven_adds_staged_research_without_changing_operational_data(
     .expect("research tables");
     assert_eq!(tables, 2);
 }
+
+#[tokio::test]
+async fn migration_eight_allows_browser_use_navigation_trace_actions() {
+    let database = Database::in_memory().await.expect("database");
+    let schema: String =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind("browser_research_trace")
+            .fetch_one(database.pool())
+            .await
+            .expect("browser trace schema");
+    assert!(schema.contains("'open_link'"));
+    assert!(schema.contains("'go_back'"));
+}
+
+#[tokio::test]
+async fn migration_nine_adds_the_controlled_growth_ledger() {
+    let database = Database::in_memory().await.expect("database");
+    let tables: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('growth_actions', 'growth_action_executions', 'growth_action_metrics')",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("growth loop tables");
+    assert_eq!(tables, 3);
+
+    let approvals_schema: String =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind("approvals")
+            .fetch_one(database.pool())
+            .await
+            .expect("approval schema");
+    assert!(approvals_schema.contains("'growth_action'"));
+
+    let icp_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('icp_hypotheses') WHERE name IN ('version', 'parent_id')",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("versioned ICP columns");
+    assert_eq!(icp_columns, 2);
+}

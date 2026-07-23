@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::adapters::agent::AgentRegistry;
+use crate::adapters::agent::app_server::CodexChatManager;
 use crate::adapters::platform::PlatformRegistry;
 use crate::adapters::platform::oauth::OAuthManager;
 use crate::browser::BrowserManager;
@@ -16,6 +17,7 @@ use crate::terminal::TerminalManager;
 pub struct AppState {
     pub database: Database,
     pub agents: AgentRegistry,
+    pub codex_chat: CodexChatManager,
     pub conductor: Conductor,
     pub platforms: PlatformRegistry,
     pub oauth: OAuthManager,
@@ -29,13 +31,15 @@ impl AppState {
     pub async fn open(path: &Path) -> AppResult<Self> {
         let database = Database::open(path).await?;
         let agents = AgentRegistry::default();
+        let browser = BrowserManager::default();
         Ok(Self {
             database,
             conductor: Conductor::new(agents.clone()),
             agents,
+            codex_chat: CodexChatManager::new(browser.clone()),
             platforms: PlatformRegistry::default(),
             oauth: OAuthManager::default(),
-            browser: BrowserManager::default(),
+            browser,
             history_selections: HistorySelectionManager::default(),
             terminals: TerminalManager::default(),
             secrets: Arc::new(OsSecretStore),
@@ -46,13 +50,15 @@ impl AppState {
     pub async fn for_tests() -> AppResult<Self> {
         let database = Database::in_memory().await?;
         let agents = AgentRegistry::default();
+        let browser = BrowserManager::default();
         Ok(Self {
             database,
             conductor: Conductor::new(agents.clone()),
             agents,
+            codex_chat: CodexChatManager::new(browser.clone()),
             platforms: PlatformRegistry::default(),
             oauth: OAuthManager::default(),
-            browser: BrowserManager::default(),
+            browser,
             history_selections: HistorySelectionManager::default(),
             terminals: TerminalManager::default(),
             secrets: Arc::new(crate::secrets::MemorySecretStore::default()),

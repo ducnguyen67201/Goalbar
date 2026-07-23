@@ -30,24 +30,62 @@ describe("BrowserPage preview mode", () => {
     expect(screen.getByRole("button", { name: /open x/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /open linkedin/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /open reddit/i })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /research chat callable/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /browser use chat callable/i })).toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Local agent terminals" })).not.toBeInTheDocument()
     expect(screen.queryByText("Research add-on requested")).not.toBeInTheDocument()
   })
 
-  it("lets chat request research but requires explicit approval of its bounds", async () => {
+  it("lets persistent Codex chat call Browser Use against the open supported tab", async () => {
     const user = userEvent.setup()
     renderBrowser()
     await user.click(screen.getByRole("button", { name: /open x/i }))
     await user.type(
       screen.getByRole("textbox", { name: "Chat message" }),
-      "Research this feed for ICP pain signals",
+      "Find me good 5 posts for ICP pain signals",
     )
     await user.click(screen.getByRole("button", { name: "Send message" }))
-    expect(await screen.findByText("Research add-on requested")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Run approved research" })).toBeDisabled()
-    await user.click(screen.getByRole("checkbox", { name: /approve this objective/i }))
-    expect(screen.getByRole("button", { name: "Run approved research" })).toBeEnabled()
+    expect(await screen.findByRole("region", { name: "Codex Browser Use activity" })).toBeInTheDocument()
+    expect(await screen.findByText("Browser Use complete")).toBeInTheDocument()
+    expect(screen.getByText("Called directly by the persistent Codex chat")).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /approve this objective/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run approved research" })).not.toBeInTheDocument()
+  })
+
+  it("explains that Browser Use needs an open supported tab", async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await user.type(screen.getByRole("textbox", { name: "Chat message" }), "Analyze this feed")
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+    expect(
+      await screen.findByText(
+        "Open X, LinkedIn, or Reddit beside this chat so Browser Use has a page to inspect.",
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Codex Browser Use activity" })).not.toBeInTheDocument()
+  })
+
+  it("keeps strategy-only questions in chat instead of forcing Browser Use", async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await user.type(screen.getByRole("textbox", { name: "Chat message" }), "Help me sharpen my positioning")
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+    expect(
+      await screen.findByText(
+        "I can help shape that. Give me the audience, the outcome you want, and what you already believe to be true.",
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Codex Browser Use activity" })).not.toBeInTheDocument()
+  })
+
+  it("starts a fresh persistent Codex chat from the header", async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await user.type(screen.getByRole("textbox", { name: "Chat message" }), "Help me sharpen my positioning")
+    await user.click(screen.getByRole("button", { name: "Send message" }))
+    expect(await screen.findByText(/give me the audience/i)).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "New Codex chat" }))
+    await waitFor(() => expect(screen.queryByText(/give me the audience/i)).not.toBeInTheDocument())
+    expect(screen.getByText(/I’m your founder chat/i)).toBeInTheDocument()
   })
 
   it("keeps the address visible and normalizes an HTTPS navigation", async () => {

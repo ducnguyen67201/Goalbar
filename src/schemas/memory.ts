@@ -28,6 +28,8 @@ export const icpHypothesesSchema = z.object({ hypotheses: z.array(icpHypothesisS
 export const storedIcpHypothesisSchema = icpHypothesisSchema.extend({
   id: z.string().uuid(),
   founderId: z.string().uuid(),
+  version: z.number().int().positive(),
+  parentId: z.string().uuid().nullable().optional(),
   status: z.enum(["proposed", "active", "rejected", "archived"]),
   createdAt: z.string(),
   updatedAt: z.string(),

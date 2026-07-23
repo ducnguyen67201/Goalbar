@@ -46,6 +46,16 @@ const MIGRATIONS: &[EmbeddedMigration] = &[
         name: "agent_research",
         sql: include_str!("../../migrations/0007_agent_research.sql"),
     },
+    EmbeddedMigration {
+        version: 8,
+        name: "browser_use_trace",
+        sql: include_str!("../../migrations/0008_browser_use_trace.sql"),
+    },
+    EmbeddedMigration {
+        version: 9,
+        name: "controlled_growth_loop",
+        sql: include_str!("../../migrations/0009_controlled_growth_loop.sql"),
+    },
 ];
 
 pub async fn run(pool: &SqlitePool) -> AppResult<()> {

@@ -3,6 +3,7 @@ pub mod browser;
 pub mod content;
 pub mod experiment;
 pub mod founder;
+pub mod growth_loop;
 pub mod history;
 pub mod icp;
 pub mod job;

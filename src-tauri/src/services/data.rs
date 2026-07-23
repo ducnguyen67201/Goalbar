@@ -34,7 +34,7 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
     .await?;
     let icp = json_array(
         state.database.pool(),
-        "SELECT json_group_array(json_object('id', id, 'founderId', founder_id, 'role', role, 'situation', situation, 'urgentProblem', urgent_problem, 'desiredOutcome', desired_outcome, 'confidence', confidence, 'status', status, 'createdAt', created_at)) FROM icp_hypotheses",
+        "SELECT json_group_array(json_object('id', id, 'founderId', founder_id, 'version', version, 'parentId', parent_id, 'role', role, 'situation', situation, 'urgentProblem', urgent_problem, 'desiredOutcome', desired_outcome, 'confidence', confidence, 'status', status, 'createdAt', created_at)) FROM icp_hypotheses",
     )
     .await?;
     let ideas = json_array(
@@ -49,7 +49,7 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
     .await?;
     let learnings = json_array(
         state.database.pool(),
-        "SELECT json_group_array(json_object('id', id, 'founderId', founder_id, 'summary', summary, 'evidence', json(evidence_json), 'confidence', confidence, 'status', status, 'createdAt', created_at)) FROM learnings",
+        "SELECT json_group_array(json_object('id', id, 'founderId', founder_id, 'growthActionId', growth_action_id, 'summary', summary, 'evidence', json(evidence_json), 'confidence', confidence, 'status', status, 'createdAt', created_at)) FROM learnings",
     )
     .await?;
     let ingestion_sources = json_array(
@@ -67,8 +67,23 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
         "SELECT json_group_array(json_object('id', id, 'sourceId', source_id, 'status', status, 'provider', provider, 'objective', objective, 'limits', json(limits_json), 'counts', json(counts_json), 'pauseReason', pause_reason, 'errorCode', error_code, 'startedAt', started_at, 'updatedAt', updated_at, 'completedAt', completed_at)) FROM ingestion_runs",
     )
     .await?;
+    let growth_actions = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'founderId', founder_id, 'icpHypothesisId', icp_hypothesis_id, 'experimentId', experiment_id, 'kind', kind, 'platform', platform, 'title', title, 'rationale', rationale, 'targetUrl', target_url, 'exactPayload', exact_payload, 'payloadHash', payload_hash, 'revision', revision, 'hypothesis', hypothesis, 'successMetric', success_metric, 'evaluationWindowDays', evaluation_window_days, 'status', status, 'scheduledFor', scheduled_for, 'completedAt', completed_at, 'createdAt', created_at, 'updatedAt', updated_at)) FROM growth_actions",
+    )
+    .await?;
+    let growth_action_executions = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'actionId', action_id, 'approvalId', approval_id, 'outcome', outcome, 'resultUrl', result_url, 'detail', detail, 'attemptedAt', attempted_at)) FROM growth_action_executions",
+    )
+    .await?;
+    let growth_action_metrics = json_array(
+        state.database.pool(),
+        "SELECT json_group_array(json_object('id', id, 'actionId', action_id, 'metricName', metric_name, 'value', value, 'availability', availability, 'sourceDefinition', source_definition, 'notes', notes, 'observedAt', observed_at, 'collectedAt', collected_at)) FROM growth_action_metrics",
+    )
+    .await?;
     let manifest = serde_json::json!({
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "exportedAt": created_at.to_rfc3339(),
         "includesSecrets": false,
         "founderProfiles": founder,
@@ -78,7 +93,10 @@ pub async fn export_json(state: &AppState) -> AppResult<DataArtifact> {
         "learnings": learnings,
         "ingestionSources": ingestion_sources,
         "ingestionRuns": ingestion_runs,
-        "activityItems": activity_items
+        "activityItems": activity_items,
+        "growthActions": growth_actions,
+        "growthActionExecutions": growth_action_executions,
+        "growthActionMetrics": growth_action_metrics
     });
     tokio::fs::write(&path, serde_json::to_vec_pretty(&manifest)?).await?;
     Ok(DataArtifact {
@@ -126,6 +144,9 @@ pub async fn factory_reset(state: &AppState, confirmation: &str) -> AppResult<()
             .await?;
     let mut transaction = state.database.pool().begin().await?;
     for table in [
+        "growth_action_metrics",
+        "growth_action_executions",
+        "growth_actions",
         "browser_checkpoints",
         "activity_items",
         "ingestion_runs",

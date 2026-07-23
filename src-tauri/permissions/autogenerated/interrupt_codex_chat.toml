@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-interrupt-codex-chat"
+description = "Enables the interrupt_codex_chat command without any pre-configured scope."
+commands.allow = ["interrupt_codex_chat"]
+
+[[permission]]
+identifier = "deny-interrupt-codex-chat"
+description = "Denies the interrupt_codex_chat command without any pre-configured scope."
+commands.deny = ["interrupt_codex_chat"]

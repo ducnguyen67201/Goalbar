@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-growth-action-learning"
+description = "Enables the record_growth_action_learning command without any pre-configured scope."
+commands.allow = ["record_growth_action_learning"]
+
+[[permission]]
+identifier = "deny-record-growth-action-learning"
+description = "Denies the record_growth_action_learning command without any pre-configured scope."
+commands.deny = ["record_growth_action_learning"]

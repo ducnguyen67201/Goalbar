@@ -1,8 +1,9 @@
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::State;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
+use crate::adapters::agent::app_server::{CodexChatState, CodexChatTurnResult};
 use crate::adapters::agent::{AgentResult, AgentStatus};
 use crate::app_state::AppState;
 use crate::error::{AppError, CommandError};
@@ -15,6 +16,13 @@ pub struct RunAgentInput {
     pub prompt: String,
     pub context: Value,
     pub output_schema: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SendCodexChatInput {
+    pub message: String,
+    pub active_tab_id: Option<String>,
 }
 
 #[tauri::command]
@@ -42,6 +50,53 @@ pub async fn run_agent_task(
         .await
         .map_err(CommandError::from)?;
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn send_codex_chat_message(
+    input: SendCodexChatInput,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CodexChatTurnResult, CommandError> {
+    let active_tab_id = input
+        .active_tab_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|error| CommandError::from(AppError::Validation(error.to_string())))?;
+    state
+        .codex_chat
+        .send_message(&app, &input.message, active_tab_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn get_codex_chat_state(
+    state: State<'_, AppState>,
+) -> Result<CodexChatState, CommandError> {
+    Ok(state.codex_chat.current_state().await)
+}
+
+#[tauri::command]
+pub async fn interrupt_codex_chat(state: State<'_, AppState>) -> Result<bool, CommandError> {
+    state
+        .codex_chat
+        .interrupt()
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn new_codex_chat(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    state
+        .codex_chat
+        .new_thread(&app)
+        .await
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]

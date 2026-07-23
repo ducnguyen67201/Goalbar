@@ -18,8 +18,8 @@ export const founderChatResearchRequestSchema = z
     objective: z.string().trim().min(1).max(1_000),
     reason: z.string().trim().min(1).max(1_000),
     ownership: z.enum(["own", "reference"]),
-    maximumItems: z.number().int().min(1).max(500),
-    maximumSteps: z.number().int().min(1).max(100),
+    maximumItems: z.number().int().min(1).max(25),
+    maximumSteps: z.number().int().min(1).max(8),
   })
   .strict()
 
@@ -49,6 +49,55 @@ export const founderChatAgentResultSchema = z
   })
   .strict()
 
+export const sendCodexChatInputSchema = z
+  .object({
+    message: z.string().trim().min(1).max(20_000),
+    activeTabId: z.string().uuid().nullable(),
+  })
+  .strict()
+
+export const codexChatTurnResultSchema = z
+  .object({
+    threadId: z.string().min(1),
+    turnId: z.string().min(1),
+    reply: z.string().trim().min(1).max(40_000),
+  })
+  .strict()
+
+export const codexChatMessageSchema = z
+  .object({
+    id: z.string().uuid(),
+    role: z.enum(["user", "assistant"]),
+    body: z.string().max(40_000),
+  })
+  .strict()
+
+export const codexChatStateSchema = z
+  .object({
+    threadId: z.string().min(1).nullable(),
+    messages: z.array(codexChatMessageSchema).max(200),
+  })
+  .strict()
+
+export const codexChatEventSchema = z
+  .object({
+    kind: z.enum([
+      "turn_started",
+      "assistant_delta",
+      "tool_started",
+      "tool_completed",
+      "turn_completed",
+      "state_changed",
+    ]),
+    threadId: z.string(),
+    turnId: z.string().nullable(),
+    delta: z.string().nullable(),
+    tool: z.string().nullable(),
+    message: z.string().nullable(),
+    success: z.boolean().nullable(),
+  })
+  .strict()
+
 export const founderChatOutputJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -65,8 +114,8 @@ export const founderChatOutputJsonSchema = {
             objective: { type: "string", minLength: 1, maxLength: 1_000 },
             reason: { type: "string", minLength: 1, maxLength: 1_000 },
             ownership: { type: "string", enum: ["own", "reference"] },
-            maximumItems: { type: "integer", minimum: 1, maximum: 500 },
-            maximumSteps: { type: "integer", minimum: 1, maximum: 100 },
+            maximumItems: { type: "integer", minimum: 1, maximum: 25 },
+            maximumSteps: { type: "integer", minimum: 1, maximum: 8 },
           },
         },
         { type: "null" },
@@ -79,3 +128,6 @@ export type AgentProvider = z.infer<typeof agentProviderSchema>
 export type AgentStatus = z.infer<typeof agentStatusSchema>
 export type FounderChatResearchRequest = z.infer<typeof founderChatResearchRequestSchema>
 export type FounderChatTurn = z.infer<typeof founderChatTurnSchema>
+export type CodexChatEvent = z.infer<typeof codexChatEventSchema>
+export type CodexChatState = z.infer<typeof codexChatStateSchema>
+export type CodexChatTurnResult = z.infer<typeof codexChatTurnResultSchema>

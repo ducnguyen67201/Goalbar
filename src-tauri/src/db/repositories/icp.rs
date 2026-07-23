@@ -22,9 +22,24 @@ impl IcpRepository {
     ) -> AppResult<Uuid> {
         let id = Uuid::new_v4();
         let now = Utc::now().to_rfc3339();
-        sqlx::query("INSERT INTO icp_hypotheses (id, founder_id, role, situation, urgent_problem, current_workaround, desired_outcome, objections_json, language_json, confidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?)")
+        let mut transaction = self.pool.begin().await?;
+        let version: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM icp_hypotheses WHERE founder_id = ?",
+        )
+        .bind(founder_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await?;
+        let parent_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM icp_hypotheses WHERE founder_id = ? AND status = 'active' ORDER BY version DESC LIMIT 1",
+        )
+        .bind(founder_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        sqlx::query("INSERT INTO icp_hypotheses (id, founder_id, version, parent_id, role, situation, urgent_problem, current_workaround, desired_outcome, objections_json, language_json, confidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?)")
             .bind(id.to_string())
             .bind(founder_id.to_string())
+            .bind(version)
+            .bind(parent_id)
             .bind(draft.role)
             .bind(draft.situation)
             .bind(draft.urgent_problem)
@@ -35,8 +50,9 @@ impl IcpRepository {
             .bind(draft.confidence.clamp(0.0, 1.0))
             .bind(&now)
             .bind(&now)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?;
+        transaction.commit().await?;
         Ok(id)
     }
 
@@ -59,7 +75,7 @@ impl IcpRepository {
     }
 
     pub async fn list_for_founder(&self, founder_id: Uuid) -> AppResult<Vec<StoredIcpHypothesis>> {
-        let rows = sqlx::query("SELECT id, founder_id, role, situation, urgent_problem, current_workaround, desired_outcome, objections_json, language_json, confidence, status, created_at, updated_at FROM icp_hypotheses WHERE founder_id = ? AND status != 'archived' ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, updated_at DESC")
+        let rows = sqlx::query("SELECT id, founder_id, version, parent_id, role, situation, urgent_problem, current_workaround, desired_outcome, objections_json, language_json, confidence, status, created_at, updated_at FROM icp_hypotheses WHERE founder_id = ? AND status != 'archived' ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, version DESC")
             .bind(founder_id.to_string())
             .fetch_all(&self.pool)
             .await?;
@@ -67,19 +83,28 @@ impl IcpRepository {
     }
 
     pub async fn accept(&self, founder_id: Uuid, hypothesis_id: Uuid) -> AppResult<()> {
+        let now = Utc::now().to_rfc3339();
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("UPDATE icp_hypotheses SET status = 'archived', updated_at = ? WHERE founder_id = ? AND status = 'active' AND id != ?")
+            .bind(&now)
+            .bind(founder_id.to_string())
+            .bind(hypothesis_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
         let result = sqlx::query(
             "UPDATE icp_hypotheses SET status = 'active', updated_at = ? WHERE id = ? AND founder_id = ? AND status IN ('proposed', 'active')",
         )
-        .bind(Utc::now().to_rfc3339())
+        .bind(&now)
         .bind(hypothesis_id.to_string())
         .bind(founder_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
         if result.rows_affected() != 1 {
             return Err(AppError::NotFound(format!(
                 "ICP hypothesis {hypothesis_id}"
             )));
         }
+        transaction.commit().await?;
         Ok(())
     }
 }
@@ -88,6 +113,12 @@ fn row_to_hypothesis(row: &sqlx::sqlite::SqliteRow) -> AppResult<StoredIcpHypoth
     Ok(StoredIcpHypothesis {
         id: parse_uuid(row.try_get("id")?)?,
         founder_id: parse_uuid(row.try_get("founder_id")?)?,
+        version: u32::try_from(row.try_get::<i64, _>("version")?)
+            .map_err(|_| AppError::Internal("ICP version is outside u32".to_owned()))?,
+        parent_id: row
+            .try_get::<Option<&str>, _>("parent_id")?
+            .map(parse_uuid)
+            .transpose()?,
         draft: IcpHypothesisDraft {
             role: row.try_get("role")?,
             situation: row.try_get("situation")?,
@@ -159,9 +190,34 @@ mod tests {
             IcpStatus::Proposed
         );
         repository.accept(founder.id, id).await.expect("accept");
-        assert_eq!(
-            repository.list_for_founder(founder.id).await.expect("list")[0].status,
-            IcpStatus::Active
-        );
+        let first = repository.list_for_founder(founder.id).await.expect("list");
+        assert_eq!(first[0].status, IcpStatus::Active);
+        assert_eq!(first[0].version, 1);
+
+        let second_id = repository
+            .save_hypothesis(
+                founder.id,
+                IcpHypothesisDraft {
+                    role: "Technical solo founder".to_owned(),
+                    situation: "Building in public".to_owned(),
+                    urgent_problem: "Weak audience feedback".to_owned(),
+                    current_workaround: "Broad content".to_owned(),
+                    desired_outcome: "Qualified conversations".to_owned(),
+                    objections: vec![],
+                    language: vec!["operator signal".to_owned()],
+                    confidence: 0.6,
+                },
+            )
+            .await
+            .expect("second hypothesis");
+        repository
+            .accept(founder.id, second_id)
+            .await
+            .expect("accept second");
+        let current = repository.list_for_founder(founder.id).await.expect("list");
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0].id, second_id);
+        assert_eq!(current[0].version, 2);
+        assert_eq!(current[0].parent_id, Some(id));
     }
 }

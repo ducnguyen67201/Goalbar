@@ -237,7 +237,10 @@ pub struct ResearchFindingDraft {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BrowserResearchAction {
-    Scroll,
+    Scroll { delta_y: i32 },
+    OpenLink { url: String },
+    GoBack,
+    RequestUserAction { reason: String, recovery: String },
     Finish { reason: String },
 }
 

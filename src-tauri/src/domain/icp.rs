@@ -50,6 +50,8 @@ impl IcpStatus {
 pub struct StoredIcpHypothesis {
     pub id: Uuid,
     pub founder_id: Uuid,
+    pub version: u32,
+    pub parent_id: Option<Uuid>,
     #[serde(flatten)]
     pub draft: IcpHypothesisDraft,
     pub status: IcpStatus,

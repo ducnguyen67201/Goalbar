@@ -10,6 +10,19 @@ For the user’s own historical record, import the official X, LinkedIn, or Redd
 
 Founder chat sits beside the browser and can request bounded research through an explicit approval step. Optional interactive shell, Codex, and Claude terminal infrastructure remains available for future developer workflows. See [agent workbench](docs/agent-workbench.md), [local research browser](docs/browser-conductor.md), and [history import](docs/history-import.md).
 
+## Controlled growth loop
+
+The Growth screen keeps a local ledger from ICP hypothesis to learning:
+
+1. Propose a research, follow, comment, or post action with a hypothesis and success signal.
+2. Approve the exact action revision. Editing it invalidates the previous approval.
+3. Record the action as completed after the founder performs it.
+4. Attach metric snapshots with their source definition and observation time.
+5. Accept a learning only after measurement.
+
+Goalbar does not silently perform social actions from this queue. The execution record captures what
+the founder actually did and provides a safe boundary for approved platform adapters later.
+
 ## Privacy model
 
 - No Goalbar cloud account or backend.

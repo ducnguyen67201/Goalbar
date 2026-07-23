@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-new-codex-chat"
+description = "Enables the new_codex_chat command without any pre-configured scope."
+commands.allow = ["new_codex_chat"]
+
+[[permission]]
+identifier = "deny-new-codex-chat"
+description = "Denies the new_codex_chat command without any pre-configured scope."
+commands.deny = ["new_codex_chat"]

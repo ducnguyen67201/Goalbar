@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-growth-action-execution"
+description = "Enables the record_growth_action_execution command without any pre-configured scope."
+commands.allow = ["record_growth_action_execution"]
+
+[[permission]]
+identifier = "deny-record-growth-action-execution"
+description = "Denies the record_growth_action_execution command without any pre-configured scope."
+commands.deny = ["record_growth_action_execution"]

@@ -43,6 +43,14 @@ impl TodayService {
             sqlx::query_scalar("SELECT COALESCE(SUM(unread_count), 0) FROM conversations")
                 .fetch_one(&self.pool)
                 .await?;
+        let growth_proposals: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM growth_actions WHERE status = 'proposed'")
+                .fetch_one(&self.pool)
+                .await?;
+        let growth_approved: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM growth_actions WHERE status = 'approved'")
+                .fetch_one(&self.pool)
+                .await?;
         let mut actions = Vec::new();
         if founder_count == 0 {
             actions.push(NextAction {
@@ -87,6 +95,26 @@ impl TodayService {
                 reason: "These exact revisions are ready for an account decision.".to_owned(),
                 route: "/create".to_owned(),
                 priority: 85,
+            });
+        }
+        if growth_proposals > 0 {
+            actions.push(NextAction {
+                kind: "growth_queue".to_owned(),
+                title: format!("Review {growth_proposals} proposed growth actions"),
+                reason: "Each action includes its target, exact payload, hypothesis, and success signal."
+                    .to_owned(),
+                route: "/growth".to_owned(),
+                priority: 92,
+            });
+        }
+        if growth_approved > 0 {
+            actions.push(NextAction {
+                kind: "growth_queue".to_owned(),
+                title: format!("Complete {growth_approved} approved growth actions"),
+                reason: "Record what actually happened so the learning loop has trustworthy data."
+                    .to_owned(),
+                route: "/growth".to_owned(),
+                priority: 88,
             });
         }
         actions.sort_by_key(|action| std::cmp::Reverse(action.priority));

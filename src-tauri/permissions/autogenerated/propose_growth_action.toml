@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-propose-growth-action"
+description = "Enables the propose_growth_action command without any pre-configured scope."
+commands.allow = ["propose_growth_action"]
+
+[[permission]]
+identifier = "deny-propose-growth-action"
+description = "Denies the propose_growth_action command without any pre-configured scope."
+commands.deny = ["propose_growth_action"]

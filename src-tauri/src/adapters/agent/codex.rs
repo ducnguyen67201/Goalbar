@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use semver::Version;
 use tokio_util::sync::CancellationToken;
 
 use super::jsonl::{find_final_text, parse_json_lines, parse_structured_text};
@@ -26,13 +27,6 @@ impl CodexAdapter {
     fn binary_candidates() -> Vec<PathBuf> {
         let mut candidates = Vec::new();
 
-        if let Some(path) = std::env::var_os("GOALBAR_CODEX_PATH")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-        {
-            push_unique(&mut candidates, path);
-        }
-
         if let Ok(paths) = which::which_all("codex") {
             for path in paths {
                 push_unique(&mut candidates, path);
@@ -51,8 +45,17 @@ impl CodexAdapter {
         candidates
     }
 
-    async fn resolve_binary(&self) -> AppResult<(PathBuf, String)> {
-        self.resolve_binary_from(Self::binary_candidates()).await
+    fn configured_candidates() -> Vec<PathBuf> {
+        std::env::var_os("GOALBAR_CODEX_PATH")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .map(|path| vec![path])
+            .unwrap_or_else(Self::binary_candidates)
+    }
+
+    pub(crate) async fn resolve_binary(&self) -> AppResult<(PathBuf, String)> {
+        self.resolve_binary_from(Self::configured_candidates())
+            .await
     }
 
     async fn resolve_binary_from(&self, candidates: Vec<PathBuf>) -> AppResult<(PathBuf, String)> {
@@ -61,16 +64,22 @@ impl CodexAdapter {
         }
 
         let mut failures = Vec::new();
+        let mut working = Vec::new();
         for path in candidates {
             let version = probe(&self.runner, &path, vec!["--version".to_owned()]).await;
             if version.0 == 0 {
-                return Ok((path, version.1));
+                working.push((codex_version(&version.1), path, version.1));
+                continue;
             }
             failures.push(format!(
                 "{}: {}",
                 path.display(),
                 concise_failure(&version.1)
             ));
+        }
+        working.sort_by(|left, right| left.0.cmp(&right.0));
+        if let Some((_, path, version)) = working.pop() {
+            return Ok((path, version));
         }
 
         Err(AppError::Agent(format!(
@@ -80,6 +89,13 @@ impl CodexAdapter {
     }
 }
 
+fn codex_version(output: &str) -> Version {
+    output
+        .split_whitespace()
+        .find_map(|token| Version::parse(token.trim_start_matches('v')).ok())
+        .unwrap_or_else(|| Version::new(0, 0, 0))
+}
+
 #[async_trait]
 impl AgentAdapter for CodexAdapter {
     fn provider(&self) -> AgentProvider {
@@ -87,7 +103,7 @@ impl AgentAdapter for CodexAdapter {
     }
 
     async fn status(&self) -> AgentStatus {
-        let candidates = Self::binary_candidates();
+        let candidates = Self::configured_candidates();
         if candidates.is_empty() {
             return missing_status(AgentProvider::Codex);
         }
@@ -142,16 +158,7 @@ impl AgentAdapter for CodexAdapter {
             .run(
                 ProcessRequest {
                     program: path,
-                    args: vec![
-                        "exec".to_owned(),
-                        "--json".to_owned(),
-                        "--sandbox".to_owned(),
-                        "read-only".to_owned(),
-                        "--skip-git-repo-check".to_owned(),
-                        "--output-schema".to_owned(),
-                        schema_file.path().to_string_lossy().into_owned(),
-                        "-".to_owned(),
-                    ],
+                    args: execution_args(schema_file.path()),
                     stdin: prompt,
                     timeout: Duration::from_secs(task.timeout_seconds.clamp(5, 300)),
                     environment: BTreeMap::new(),
@@ -179,6 +186,25 @@ impl AgentAdapter for CodexAdapter {
             usage,
         })
     }
+}
+
+fn execution_args(schema_path: &std::path::Path) -> Vec<String> {
+    vec![
+        "exec".to_owned(),
+        "--json".to_owned(),
+        "-c".to_owned(),
+        "mcp_servers={}".to_owned(),
+        "--disable".to_owned(),
+        "plugins".to_owned(),
+        "--disable".to_owned(),
+        "apps".to_owned(),
+        "--sandbox".to_owned(),
+        "read-only".to_owned(),
+        "--skip-git-repo-check".to_owned(),
+        "--output-schema".to_owned(),
+        schema_path.to_string_lossy().into_owned(),
+        "-".to_owned(),
+    ]
 }
 
 async fn probe(runner: &ProcessRunner, path: &std::path::Path, args: Vec<String>) -> (i32, String) {
@@ -257,7 +283,7 @@ fn missing_status(provider: AgentProvider) -> AgentStatus {
 mod tests {
     use std::path::PathBuf;
 
-    use super::CodexAdapter;
+    use super::{CodexAdapter, codex_version, execution_args};
     use crate::adapters::agent::process::ProcessRunner;
 
     #[cfg(unix)]
@@ -295,5 +321,19 @@ mod tests {
         let concise = super::concise_failure(&message);
         assert!(concise.chars().count() <= 181);
         assert!(concise.ends_with('…'));
+    }
+
+    #[test]
+    fn structured_runs_disable_unneeded_plugin_and_mcp_startup() {
+        let args = execution_args(std::path::Path::new("/tmp/schema.json"));
+        assert!(args.windows(2).any(|pair| pair == ["-c", "mcp_servers={}"]));
+        assert!(args.windows(2).any(|pair| pair == ["--disable", "plugins"]));
+        assert!(args.windows(2).any(|pair| pair == ["--disable", "apps"]));
+    }
+
+    #[test]
+    fn parses_codex_versions_for_newest_healthy_selection() {
+        assert!(codex_version("codex-cli 0.145.0-alpha.30") > codex_version("codex-cli 0.144.6"));
+        assert_eq!(codex_version("--version"), semver::Version::new(0, 0, 0));
     }
 }

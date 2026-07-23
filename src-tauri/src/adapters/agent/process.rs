@@ -113,7 +113,7 @@ async fn read_limited(mut stream: impl AsyncRead + Unpin) -> AppResult<String> {
         .map_err(|error| AppError::Agent(format!("agent output was not UTF-8: {error}")))
 }
 
-fn minimum_environment() -> BTreeMap<String, String> {
+pub(crate) fn minimum_environment() -> BTreeMap<String, String> {
     const ALLOWED: &[&str] = &[
         "PATH",
         "HOME",

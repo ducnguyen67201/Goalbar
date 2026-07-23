@@ -27,7 +27,10 @@ impl ResearchRepository {
         message: &str,
         url: &str,
     ) -> AppResult<BrowserResearchTrace> {
-        if !matches!(action, "observe" | "scroll" | "finish" | "pause" | "error") {
+        if !matches!(
+            action,
+            "observe" | "scroll" | "open_link" | "go_back" | "finish" | "pause" | "error"
+        ) {
             return Err(AppError::Validation(
                 "unsupported research trace action".to_owned(),
             ));

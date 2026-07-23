@@ -148,7 +148,7 @@ export const browserResearchTraceSchema = z
     id: z.string().uuid(),
     runId: z.string().uuid(),
     step: z.number().int().nonnegative(),
-    action: z.enum(["observe", "scroll", "finish", "pause", "error"]),
+    action: z.enum(["observe", "scroll", "open_link", "go_back", "finish", "pause", "error"]),
     message: z.string(),
     url: z.string().url(),
     createdAt: z.string().datetime({ offset: true }),

@@ -14,9 +14,19 @@ impl MetricsRepository {
     }
 
     pub async fn current_score(&self) -> AppResult<GrowthScore> {
-        let rows = sqlx::query("SELECT metric_name, AVG(value) AS average FROM metric_snapshots WHERE availability = 'available' AND observed_at >= datetime('now', '-28 days') GROUP BY metric_name")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(
+            "SELECT metric_name, AVG(value) AS average
+             FROM (
+                 SELECT metric_name, value, availability, observed_at FROM metric_snapshots
+                 UNION ALL
+                 SELECT metric_name, value, availability, observed_at FROM growth_action_metrics
+             )
+             WHERE availability = 'available'
+               AND julianday(observed_at) >= julianday('now', '-28 days')
+             GROUP BY metric_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
         let mut inputs = GrowthInputs::default();
         for row in rows {
             let value: Option<f64> = row.try_get("average")?;

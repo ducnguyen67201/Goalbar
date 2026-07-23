@@ -13,8 +13,10 @@ use crate::domain::browser::{
 use crate::error::{AppError, AppResult};
 
 const OBSERVATION_SCRIPT: &str = include_str!("../../browser-scripts/semantic-observation.js");
+const FEED_OBSERVATION_SCRIPT: &str = include_str!("../../browser-scripts/feed-observation.js");
 const SELECTION_SCRIPT: &str = include_str!("../../browser-scripts/selection-capture.js");
 const MAX_BLOCKS: usize = 40;
+const MAX_FEED_BLOCKS: usize = 80;
 const MAX_BLOCK_CHARS: usize = 4_000;
 const MAX_TOTAL_CHARS: usize = 60_000;
 const MAX_LINKS: usize = 12;
@@ -38,13 +40,38 @@ pub async fn observe(
     manager: &BrowserManager,
     tab_id: Uuid,
 ) -> AppResult<BrowserObservation> {
+    observe_with_script(app, manager, tab_id, OBSERVATION_SCRIPT, MAX_BLOCKS).await
+}
+
+pub async fn observe_feed(
+    app: &AppHandle,
+    manager: &BrowserManager,
+    tab_id: Uuid,
+) -> AppResult<BrowserObservation> {
+    observe_with_script(
+        app,
+        manager,
+        tab_id,
+        FEED_OBSERVATION_SCRIPT,
+        MAX_FEED_BLOCKS,
+    )
+    .await
+}
+
+async fn observe_with_script(
+    app: &AppHandle,
+    manager: &BrowserManager,
+    tab_id: Uuid,
+    script: &str,
+    maximum_blocks: usize,
+) -> AppResult<BrowserObservation> {
     let tab = manager.tab(tab_id)?;
-    let raw = evaluate(app, manager, tab_id, OBSERVATION_SCRIPT).await?;
+    let raw = evaluate(app, manager, tab_id, script).await?;
     let mut observation: RawObservation = parse_evaluation(&raw)?;
     let current_url = browser_url(&tab.current_url)?;
     let mut remaining = MAX_TOTAL_CHARS;
     let mut blocks = Vec::new();
-    for mut block in observation.blocks.drain(..).take(MAX_BLOCKS) {
+    for mut block in observation.blocks.drain(..).take(maximum_blocks) {
         block.text = normalize_text(&block.text, MAX_BLOCK_CHARS.min(remaining));
         if block.text.is_empty() {
             continue;
@@ -167,11 +194,18 @@ fn normalize_text(value: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_text;
+    use super::{FEED_OBSERVATION_SCRIPT, normalize_text};
 
     #[test]
     fn normalizes_and_bounds_untrusted_text() {
         assert_eq!(normalize_text(" a\n\tb\u{0}c ", 3), "a b");
         assert_eq!(normalize_text("abcdef", 4), "abcd");
+    }
+
+    #[test]
+    fn feed_observation_reads_all_mounted_posts_without_using_the_clipboard() {
+        assert!(FEED_OBSERVATION_SCRIPT.contains("article, [role='article']"));
+        assert!(!FEED_OBSERVATION_SCRIPT.contains("getBoundingClientRect"));
+        assert!(!FEED_OBSERVATION_SCRIPT.contains("clipboard"));
     }
 }

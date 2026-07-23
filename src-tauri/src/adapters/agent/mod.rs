@@ -1,3 +1,4 @@
+pub mod app_server;
 pub mod claude;
 pub mod codex;
 pub mod jsonl;
